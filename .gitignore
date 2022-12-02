@@ -1,0 +1,77 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+*.ipch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Not in default template
+*.vsdix
+*.vsidx
+*.lock
+*.db
+*.json
+*.cmake
+*.bin
+*.log
+*.internal
+*.make
+*.marks
+*.ts
+*.backup
+*ninja*
+
+backups
+Eigen_test_rotation
+hello_eigen
+nanoflann
+opencv_filters
+
+02_data_level_fusion/results/*
+02_data_level_fusion/oriented_clouds/*
+
+*/.vs
+*/CMakeFiles
+*/build
+*/data
+*/CMakeCache.txt
+*/DP
+*/Makefile
+*/main
+*/backups
+*/data
+*/Testing
+*test*
+*CMake*
+*cmake*
+*.cmake
+*.idea
+*.vscode
+

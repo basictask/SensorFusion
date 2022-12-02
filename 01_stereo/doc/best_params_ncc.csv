@@ -1,0 +1,13 @@
+output_file,name,image_name,lambda,window_size,dmin,imscale,time,ncc
+output,naive,cones1,50,7,230,1,1.0666666666666667,23.2076
+output,dynamic,cones1,50,1,230,1,1.15,14.7494
+output,naive,art1,100,7,200,1,25.283333333333335,3.89721
+output,dynamic,art1,4,3,200,1,24.366666666666667,11.5145
+output,naive,aloe1,4,5,270,1,1.75,7.67926
+output,dynamic,aloe1,50,1,270,1,2.8833333333333333,12.8984
+output,naive,baby1,300,7,300,1,2.9166666666666665,24.2819
+output,dynamic,baby1,50,3,300,1,3.25,18.7203
+output,naive,cloth1,400,1,260,1,0.23333333333333334,9.99904
+output,dynamic,cloth1,200,1,260,1,3.433333333333333,3.59941
+output,naive,rocks1,100,7,274,1,3.0166666666666666,6.46472
+output,dynamic,rocks1,200,3,274,1,3.15,5.33114
