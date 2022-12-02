@@ -466,47 +466,25 @@ Mat NaiveUpsampling(Mat &input, Mat &guide)
 	return output;		
 }
 
-Mat IterativeUpsampling(Mat &D, Mat &I)
+Mat IterativeUpsampling(Mat &depth, Mat &image)
 {
-	int uf = log2(I.size().height / D.size().height);
-	Mat D_ = D;
+	int uf = log2(image.size().height / depth.size().height);
+	Mat depth_copy = depth;
 
 	for(int i = 1; i < uf-1; ++i)
 	{
-		resize(D_, D_, Size(), 2, 2);
+		resize(depth_copy, depth_copy, Size(), 2, 2);
 		
-		Mat I_lo;
-		resize(I, I_lo, D_.size());
+		Mat image_lowres;
+		resize(image, image_lowres, depth_copy.size());
 
-		D_ = Filter_GuidedBilateral(I_lo, D_);	
+		depth_copy = Filter_GuidedBilateral(image_lowres, depth_copy);	
 	}
 
-	resize(D_, D_, I.size());
-	D_ = Filter_GuidedBilateral(I, D_);
+	resize(depth_copy, depth_copy, image.size());
+	depth_copy = Filter_GuidedBilateral(image, depth_copy);
 	
-	return D_;
-}
-
-
-Mat IterativeUpsampling(Mat &D, Mat &I)
-{
-	int uf = log2(I.size().height / D.size().height);
-	Mat D_ = D;
-
-	for(int i = 1; i < uf-1; ++i)
-	{
-		resize(D_, D_, Size(), 2, 2);
-		
-		Mat I_lo;
-		resize(I, I_lo, D_.size());
-
-		D_ = Filter_GuidedBilateral(I_lo, D_);	
-	}
-
-	resize(D_, D_, I.size());
-	D_ = Filter_GuidedBilateral(I, D_);
-	
-	return D_;
+	return depth_copy;
 }
 
 void Disparity2PointCloud(string out_name, Mat &disp)
@@ -615,7 +593,6 @@ void GetBestMetric()
 	float best_metric = numeric_limits<float>::min(); 
 	int best_i = -1;
 	int best_j = -1;
-	int best_j = -1;
 	for(int i = 0; i < metriclogs.size(); ++i)
 	{
 		float metric = metriclogs.at(i);
@@ -624,15 +601,12 @@ void GetBestMetric()
 			best_metric = metric;
 			best_i = i % 2;
 			best_j = i;
-			best_i = i % 2;
-			best_j = i;
 		}
 	}
 
 	// Every even value in the metriclog is naive, every off is iterative
 	// metriclogs -> [naive, iterative, naive, iterative, ...] 
 	string best_method;
-	if(best_j % 2 == 0)
 	if(best_j % 2 == 0)
 	{
 		best_method = "naive";

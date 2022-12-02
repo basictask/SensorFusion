@@ -462,27 +462,26 @@ Mat NaiveUpsampling(Mat &input, Mat &guide)
 	return output;		
 }
 
-Mat IterativeUpsampling(Mat &D, Mat &I)
+Mat IterativeUpsampling(Mat &depth, Mat &image)
 {
-	int uf = log2(I.size().height / D.size().height);
-	Mat D_ = D;
+	int uf = log2(image.size().height / depth.size().height);
+	Mat depth_copy = depth;
 
 	for(int i = 1; i < uf-1; ++i)
 	{
-		resize(D_, D_, Size(), 2, 2);
+		resize(depth_copy, depth_copy, Size(), 2, 2);
 		
-		Mat I_lo;
-		resize(I, I_lo, D_.size());
+		Mat image_lowres;
+		resize(image, image_lowres, depth_copy.size());
 
-		D_ = Filter_GuidedBilateral(I_lo, D_);	
+		depth_copy = Filter_GuidedBilateral(image_lowres, depth_copy);	
 	}
 
-	resize(D_, D_, I.size());
-	D_ = Filter_GuidedBilateral(I, D_);
+	resize(depth_copy, depth_copy, image.size());
+	depth_copy = Filter_GuidedBilateral(image, depth_copy);
 	
-	return D_;
+	return depth_copy;
 }
-
 void Disparity2PointCloud(string out_name, Mat &disp)
 {
 	stringstream out3d;
