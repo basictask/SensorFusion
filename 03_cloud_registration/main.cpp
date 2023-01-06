@@ -25,6 +25,8 @@ const double icp_error_t = 0.018; // ICP error threshold
 const double tricp_error_t = 0.05; // TR-ICP error threshold
 const int tricp_points = 50000; // Number of points used by TR-ICP
 const string output_dir = "./results/"; // The folder to save results to
+const string ply_header = "./data/ply_header.txt"; // Header to add to all output ply files
+const vector<Point3i> colors = {Point3i(174, 4, 33), Point3i(172, 255, 36)}; // RGB Colors for point clouds
 
 // Parameters set by program
 unsigned long n_rows = -1;
@@ -273,5 +275,55 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         }
     }
 
+    output_result(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
+
     return T;
+}
+
+void output_result(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method)
+{
+    // Define the header file
+    string line;
+    ifstream header_file;
+    header_file.open(ply_header);
+
+    // Define the output file
+    stringstream out3d;
+    out3d << output_dir << cloud_name << "_method=" << method << ".ply";
+    ofstream out_file(out3d.str());
+    cout << "Printing: " << out3d.str() << "... ";
+
+    if(!header_file.is_open())
+    {
+        cout << "Error opening header file: " << ply_header << endl;
+        exit(EXIT_FAILURE);
+    }
+    try
+    {
+        // Output header
+        while(getline(header_file, line))
+        {
+            out_file << line << endl;
+        }
+        header_file.close();
+
+        // Output clouds
+        for(int i = 0; i < cloud_1.rows(); i++)
+        {
+            // Add first point with first color
+            out_file << cloud_1(i, 0) << " " << cloud_1(i, 1) << " " << cloud_1(i, 2) << " ";
+            out_file << colors[0].x << " " << colors[0].y << " " << colors[0].z << endl;
+
+            // Add second point with second color
+            out_file << cloud_2(i, 0) << " " << cloud_2(i, 1) << " " << cloud_2(i, 2) << " ";
+            out_file << colors[1].x << " " << colors[1].y << " " << colors[1].z << endl;
+        }
+        out_file.close();
+    }
+    catch (Exception &ex)
+    {
+        cout << "Error while writing " << out3d.str() << endl;
+    }
+
+    cout << "Done." << endl;
 }

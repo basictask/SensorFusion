@@ -74,4 +74,4 @@ opencv_filters
 *.cmake
 *.idea
 *.vscode
-
+*/cmake-build-debug
