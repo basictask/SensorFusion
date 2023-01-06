@@ -15,7 +15,7 @@ using namespace Eigen;
 using namespace happly;
 using namespace nanoflann;
 
-// Made by Daniel Kuknyo
+//=================[ Made by Daniel Kuknyo ]=================//
 
 // Parameters set by user
 const int max_leaf = 10; // Maximum leaf size for KD-tree search
@@ -33,12 +33,6 @@ float timenow;
 
 // Types defined for the run
 typedef KDTreeEigenMatrixAdaptor<MatrixXd> kd_tree;
-
-struct nn_point{
-    int i;
-    unsigned long index;
-    double error;
-};
 
 int main(int argc, char** argv)
 {
