@@ -60,10 +60,13 @@ int main(int argc, char** argv)
     cout << "      Points in cloud 1 = " << cloud_1.rows() << " x " << cloud_1.cols() << endl;
     cout << "      Points in cloud 2 = " << cloud_2.rows() << " x " << cloud_2.cols() << endl;
     cout << "===============[ Transformation ]===============" << endl;
-    cout << "        Rotation matrix = " << endl << transformation.first << endl << endl;
-    cout << "     Translation vector = " << endl << transformation.second << endl;
+    cout << "Rotation matrix" << endl << transformation.first << endl << endl;
+    cout << "Translation vector" << endl << transformation.second << endl;
     cout << "     Mean Squared Error = " << mse(cloud_1, cloud_2) << endl;
-    cout << "==================== [ ICP ] ===================" << endl;
+    cout << "=====================[ ICP ]====================" << endl;
+
+    // Combine unregistered clouds to see the data before registration
+    output_clouds(cloud_1, cloud_2, "before_registration");
 
     // Run the ICP algorithm
     Matrix4d T = icp(cloud_1, cloud_2);
@@ -76,6 +79,9 @@ int main(int argc, char** argv)
 
 vector<Point3d> read_pointcloud(char* filename)
 {
+    // Reads a point cloud defined in a char sequence received as a parameter
+    // Note: the ply file must contain a header or the container will be empty
+
     // Sets the cloud_name variable to the name of the point cloud
     // This is just for outputting the correct variable name
     string temp = string(filename);
@@ -95,6 +101,9 @@ vector<Point3d> read_pointcloud(char* filename)
     }
 
     // Reads a ply file of <header> px py pz nx ny nz into a vector of 3D points
+    // There must be a header ending with end_header
+    // The first 3 values in a line must be the x y z coordinate
+    bool read_flag = false;
     string line;
     ifstream myfile;
     myfile.open(filename);
@@ -107,27 +116,40 @@ vector<Point3d> read_pointcloud(char* filename)
     }
     try
     {
-        while(getline(myfile, line))
+        while(getline(myfile, line)) // Iterate over the lines in the ply file
         {
-            string arr[6];
-            int i = 0;
-            stringstream ssin(line);
-            while (ssin.good() && i < 6)
+            if(read_flag) // If the header is passed
             {
-                ssin >> arr[i];
-                i++;
+                string arr[3];
+                int i = 0;
+                stringstream ssin(line); // Create a stringstream from line
+                while (ssin.good() && i < 3) // Iterate over tokens in the line
+                {
+                    ssin >> arr[i];
+                    i++;
+                }
+                if(i == 3) // Only add if there's 3 coordinates
+                {
+                    Point3d tmp = {stof(arr[0]), stof(arr[1]), stof(arr[2])}; // Create and add point to the vector
+                    result.push_back(tmp);
+                }
             }
-            if(i == 6)
+            if(line.find("end_header") != string::npos) // If header ended set flag
             {
-                Point3d tmp = {stof(arr[0]), stof(arr[1]), stof(arr[2])};
-                result.push_back(tmp);
+                read_flag = true;
             }
         }
     }
     catch (Exception &ex)
     {
+        cout << "Error while reading data." << endl;
         return result;
     }
+    if(result.empty())
+    {
+        cout << "Error reading ply file. Header not found." << endl;
+    }
+
     return result;
 }
 
@@ -149,6 +171,8 @@ MatrixXd vector2mat(vector<Point3d> vec)
 
 MatrixXd nn_search(const MatrixXd& cloud_1, MatrixXd cloud_2)
 {
+    // Nearest-neighbor search: the number of leaves and number of neighbors can be set by hand at the top
+
     MatrixXd nn_result(cloud_1.rows(), 3);
     kd_tree tree_1(3, cref(cloud_1), max_leaf);
     tree_1.index -> buildIndex();
@@ -201,7 +225,7 @@ pair<Matrix3d, Vector3d> estimate_transformation(MatrixXd cloud_1, MatrixXd clou
 
     Matrix3d R = v_t.transpose() * u.transpose(); // Rotation matrix
 
-    if (R.determinant() < 0 )
+    if (R.determinant() < 0)
     {
         v_t.block<1, 3>(2,0) *= -1;
         R = v_t.transpose() * u.transpose();
@@ -217,14 +241,13 @@ pair<Matrix3d, Vector3d> estimate_transformation(MatrixXd cloud_1, MatrixXd clou
 MatrixXd reorder(const MatrixXd& cloud, const MatrixXd& indices)
 {
     // Reorder the rows of a matrix to match the ones given by the nearest neighbor search
-
     MatrixXd result(cloud.rows(), cloud.cols());
 
     for(int i = 0; i < cloud.rows(); i++)
     {
-        int p_0 = (int)indices(i, 0);
-        int p_1 = (int)indices(i, 1);
-        result.row(p_1) = cloud.row(p_0);
+        int p_0 = (int)indices(i, 0); // Get index for point in cloud 1
+        int p_1 = (int)indices(i, 1); // Get index for point in cloud 2
+        result.row(p_1) = cloud.row(p_0); // Swap the 2 points
     }
 
     return result;
@@ -259,7 +282,7 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         // Transform the point cloud
         for(int j = 0; j < cloud_1.rows(); j++)
         {
-            cloud_1.row(i) = ((R * cloud_1.row(i).transpose()) + t).transpose(); // Apply rotation
+            cloud_1.row(i) = ((R * cloud_1.row(i).transpose()) + t).transpose(); // Apply transformation p_i(R,t)
         }
 
         // Compute the mean squared error
@@ -269,19 +292,23 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         // Check for convergence
         if (error < icp_error_t)
         {
-            cout << "              ---ICP Converged!---" << endl;
+            cout << "         ------[ ICP Converged! ]------" << endl;
             cout << "     Mean Squared Error = " << mse(cloud_1, cloud_2) << endl;
             break;
         }
     }
 
-    output_result(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
+    output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
 
     return T;
 }
 
-void output_result(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method)
+void output_clouds(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method)
 {
+    // Outputs two point clouds into a single ply file with two colors defined in the parameter section
+    // The ply header is defined in the ./data/ folder and can be customized
+    // The number of element vertices gets calculated dynamically: n_rows*2
+
     // Define the header file
     string line;
     ifstream header_file;
@@ -300,17 +327,20 @@ void output_result(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const strin
     }
     try
     {
-        // Output header
+        // Output header to the beginning of the ply
         while(getline(header_file, line))
         {
             out_file << line << endl;
+            if(line.find("ascii") != string::npos) // Element vertex property -> n_rows*2 for the 2 clouds
+            {
+                out_file << "element vertex " << (n_rows * 2) << endl;
+            }
         }
         header_file.close();
 
-        // Output clouds
-        for(int i = 0; i < cloud_1.rows(); i++)
+        for(int i = 0; i < n_rows; i++)
         {
-            // Add first point with first color
+            // Add second point with second color
             out_file << cloud_1(i, 0) << " " << cloud_1(i, 1) << " " << cloud_1(i, 2) << " ";
             out_file << colors[0].x << " " << colors[0].y << " " << colors[0].z << endl;
 

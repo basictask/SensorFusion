@@ -31,4 +31,4 @@ double mse(const MatrixXd& cloud_1, const MatrixXd& cloud_2);
 
 Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
-void output_result(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method);
+void output_clouds(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method);
