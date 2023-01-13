@@ -2,9 +2,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
-#include <sstream>
 #include "main.h"
-#include "happly.h"
 #include "nanoflann.hpp"
 #include </usr/include/eigen3/Eigen/Dense>
 #include </usr/local/include/opencv4/opencv2/opencv.hpp>
@@ -20,10 +18,9 @@ using namespace nanoflann;
 // Parameters set by user
 const int max_leaf = 10; // Maximum leaf size for KD-tree search
 const int num_result = 1; // Number of results for KNN search
-const int icp_iter = 50; // Number of iteration for the ICP algorithm
+const int icp_iter = 30; // Number of iteration for the ICP algorithm
 const double icp_error_t = 0.018; // ICP error threshold
 const double tricp_error_t = 0.05; // TR-ICP error threshold
-const int tricp_points = 50000; // Number of points used by TR-ICP
 const string output_dir = "./results/"; // The folder to save results to
 const string ply_header = "./data/ply_header.txt"; // Header to add to all output ply files
 const vector<Point3i> colors = {Point3i(174, 4, 33), Point3i(172, 255, 36)}; // RGB Colors for point clouds
@@ -31,7 +28,7 @@ const vector<Point3i> colors = {Point3i(174, 4, 33), Point3i(172, 255, 36)}; // 
 // Parameters set by program
 unsigned long n_rows = -1;
 string cloud_name;
-float timenow;
+//float timenow;
 
 // Types defined for the run
 typedef KDTreeEigenMatrixAdaptor<MatrixXd> kd_tree;
@@ -61,8 +58,8 @@ int main(int argc, char** argv)
     cout << "      Points in cloud 2 = " << cloud_2.rows() << " x " << cloud_2.cols() << endl;
     cout << "===============[ Transformation ]===============" << endl;
     cout << "Rotation matrix" << endl << transformation.first << endl << endl;
-    cout << "Translation vector" << endl << transformation.second << endl;
-    cout << "     Mean Squared Error = " << mse(cloud_1, cloud_2) << endl;
+    cout << "Translation vector" << endl << transformation.second << endl << endl;
+    cout << "Mean Squared Error = " << calc_error(cloud_1, cloud_2, true) << endl;
     cout << "=====================[ ICP ]====================" << endl;
 
     // Combine unregistered clouds to see the data before registration
@@ -214,24 +211,15 @@ pair<Matrix3d, Vector3d> estimate_transformation(MatrixXd cloud_1, MatrixXd clou
     cloud_1 = cloud_1.rowwise() - centroid_1.transpose();
     cloud_2 = cloud_2.rowwise() - centroid_2.transpose();
 
-    MatrixXd h = cloud_1.transpose() * cloud_2;
+    MatrixXd covariance = cloud_1.transpose() * cloud_2; // Create 3x3 covariance matrix
 
-    // Calculate the singular value decomposition for the matrix
-    JacobiSVD<MatrixXd> svd(h, ComputeFullU | ComputeFullV);
+    JacobiSVD<Matrix3d> svd(covariance, ComputeFullU | ComputeFullV);
 
-    MatrixXd u = svd.matrixU();
-    MatrixXd v = svd.matrixV();
-    MatrixXd v_t = v.transpose();
+    // Compute the rotation matrix using the U and V matrices from the SVD
+    Matrix3d R = svd.matrixU() * svd.matrixV().transpose();
 
-    Matrix3d R = v_t.transpose() * u.transpose(); // Rotation matrix
-
-    if (R.determinant() < 0)
-    {
-        v_t.block<1, 3>(2,0) *= -1;
-        R = v_t.transpose() * u.transpose();
-    }
-
-    Vector3d t = centroid_1 - R * centroid_2; // Translation vector
+    // Compute the translation vector as the difference between the centroids
+    Vector3d t = centroid_2 - R * centroid_1;
 
     pair<Matrix3d, Vector3d> result(R, t);
 
@@ -253,9 +241,22 @@ MatrixXd reorder(const MatrixXd& cloud, const MatrixXd& indices)
     return result;
 }
 
-double mse(const MatrixXd& cloud_1, const MatrixXd& cloud_2)
+void transform_cloud(MatrixXd& cloud, const Matrix3d& R, const Vector3d& t)
 {
-    return (cloud_1 - cloud_2).array().pow(2).sum() / (double)cloud_1.rows();
+    cloud *= R;
+    cloud.rowwise() += t.transpose();
+}
+
+double calc_error(const MatrixXd& cloud_1, const MatrixXd& cloud_2, bool mean)
+{
+    if(mean) // Return the mean squared error between two point clouds
+    {
+        return (cloud_1 - cloud_2).array().pow(2).sum() / (double)cloud_1.rows();
+    }
+    else // Return the sum of squared residuals between two point clouds
+    {
+        return (cloud_1 - cloud_2).array().pow(2).sum();
+    }
 }
 
 Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
@@ -276,30 +277,30 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         Vector3d t = transform.second; // Translation vector
 
         // Update the transformation matrix
-        T.block<3,3>(0,0) = R;
-        T.block<3,1>(0,3) = t;
+        Matrix4d T_temp = Matrix4d::Identity();
+        T_temp.block<3,3>(0,0) = R;
+        T_temp.block<3,1>(0,3) = t;
+        T *= T_temp;
 
-        // Transform the point cloud
-        for(int j = 0; j < cloud_1.rows(); j++)
-        {
-            cloud_1.row(i) = ((R * cloud_1.row(i).transpose()) + t).transpose(); // Apply transformation p_i(R,t)
-        }
+        transform_cloud(cloud_1, R, t);
 
         // Compute the mean squared error
-        double error = mse(cloud_1, cloud_2);
+        double error = calc_error(cloud_1, cloud_2, true);
         cout << "mse=" << error << endl;
 
         // Check for convergence
         if (error < icp_error_t)
         {
             cout << "         ------[ ICP Converged! ]------" << endl;
-            cout << "     Mean Squared Error = " << mse(cloud_1, cloud_2) << endl;
-            break;
+            cout << "                  Error = " << calc_error(cloud_1, cloud_2, true) << endl;
+            output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
+            return T;
         }
     }
 
+    cout << " ------[ ICP Reached max. iterations! ]------" << endl;
+    cout << "     Mean Squared Error = " << calc_error(cloud_1, cloud_2, true) << endl;
     output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
-
     return T;
 }
 
@@ -357,3 +358,4 @@ void output_clouds(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const strin
 
     cout << "Done." << endl;
 }
+
