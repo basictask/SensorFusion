@@ -18,9 +18,14 @@ using namespace nanoflann;
 // Parameters set by user
 const int max_leaf = 10; // Maximum leaf size for KD-tree search
 const int num_result = 1; // Number of results for KNN search
-const int icp_iter = 30; // Number of iteration for the ICP algorithm
-const double icp_error_t = 0.018; // ICP error threshold
-const double tricp_error_t = 0.05; // TR-ICP error threshold
+const int icp_iter = 100; // Number of iteration for the ICP algorithm
+const double icp_error_t = 0.7; // ICP error threshold
+const int tricp_iter = 100; // Number of iterations for the TR-ICP algorithm
+const double tricp_error_t = 0.7; // TR-ICP error threshold
+const double tricp_error_change_t = 0.5; // TR-ICP error change threshold
+const double phi = (1 + sqrt(5)) / 2; // Golden ratio
+const int lambda = 2; // Tolerance parameter for golden section objective function
+
 const string output_dir = "./results/"; // The folder to save results to
 const string ply_header = "./data/ply_header.txt"; // Header to add to all output ply files
 const vector<Point3i> colors = {Point3i(174, 4, 33), Point3i(172, 255, 36)}; // RGB Colors for point clouds
@@ -28,6 +33,7 @@ const vector<Point3i> colors = {Point3i(174, 4, 33), Point3i(172, 255, 36)}; // 
 // Parameters set by program
 unsigned long n_rows = -1;
 string cloud_name;
+double xi; // Maximum overlap parameter for tr-icp. N_po = xi * N_p
 //float timenow;
 
 // Types defined for the run
@@ -60,16 +66,21 @@ int main(int argc, char** argv)
     cout << "Rotation matrix" << endl << transformation.first << endl << endl;
     cout << "Translation vector" << endl << transformation.second << endl << endl;
     cout << "Mean Squared Error = " << calc_error(cloud_1, cloud_2, true) << endl;
-    cout << "=====================[ ICP ]====================" << endl;
 
     // Combine unregistered clouds to see the data before registration
     output_clouds(cloud_1, cloud_2, "before_registration");
 
     // Run the ICP algorithm
-    Matrix4d T = icp(cloud_1, cloud_2);
-    cout << "Transformation matrix between point clouds: " << endl << T << endl;
+    cout << "=====================[ ICP ]====================" << endl;
+//    Matrix4d T_icp = icp(cloud_1, cloud_2);
+//    cout << "Transformation matrix between point clouds: " << endl << T_icp << endl;
 
-    cout << "Done." << endl;
+    // Run the TR-ICP algorithm
+    cout << "===================[ TR-ICP ]===================" << endl;
+    Matrix4d T_tr_icp = tr_icp(cloud_1, cloud_2);
+    cout << "Transformation matrix between point clouds: " << endl << T_tr_icp << endl;
+
+    cout << "====================[ Done ]====================" << endl;
     
     return 0;
 }
@@ -155,25 +166,23 @@ MatrixXd vector2mat(vector<Point3d> vec)
     // Converts a vector of 3D (double) points into an Eigen matrix
     // We need this conversion because Eigen matrices are of fixed size and point clouds aren't
     MatrixXd result(n_rows, 3);
-
     for(int i = 0; i < n_rows; i++)
     {
         result(i, 0) = vec[i].x;
         result(i, 1) = vec[i].y;
         result(i, 2) = vec[i].z;
     }
-
     return result;
 }
 
 MatrixXd nn_search(const MatrixXd& cloud_1, MatrixXd cloud_2)
 {
-    // Nearest-neighbor search: the number of leaves and number of neighbors can be set by hand at the top
-
+    // Nearest-neighbor search -> params can be set at the top of the script
+    // The number of leaves: num_leaves
+    // Number of neighbors: num_result
     MatrixXd nn_result(cloud_1.rows(), 3);
     kd_tree tree_1(3, cref(cloud_1), max_leaf);
     tree_1.index -> buildIndex();
-    double total_mse = 0;
 
     for (int i = 0; i < cloud_1.rows(); i++)
     {
@@ -183,16 +192,12 @@ MatrixXd nn_search(const MatrixXd& cloud_1, MatrixXd cloud_2)
         KNNResultSet<double> result(num_result); // Result of NN search for a single point
         result.init(&nn_index, &error);
 
-        // Run KNN search
-        tree_1.index -> findNeighbors(result, &point[0], SearchParams(10));
+        tree_1.index -> findNeighbors(result, &point[0], SearchParams(10)); // Run KNN search
 
         // Assign to container matrix
         nn_result(i, 0) = (double)i;
         nn_result(i, 1) = (double)nn_index;
         nn_result(i, 2) = error;
-
-        // Count error
-        total_mse += error;
     }
 
     return nn_result;
@@ -230,19 +235,18 @@ MatrixXd reorder(const MatrixXd& cloud, const MatrixXd& indices)
 {
     // Reorder the rows of a matrix to match the ones given by the nearest neighbor search
     MatrixXd result(cloud.rows(), cloud.cols());
-
     for(int i = 0; i < cloud.rows(); i++)
     {
         int p_0 = (int)indices(i, 0); // Get index for point in cloud 1
         int p_1 = (int)indices(i, 1); // Get index for point in cloud 2
         result.row(p_1) = cloud.row(p_0); // Swap the 2 points
     }
-
     return result;
 }
 
 void transform_cloud(MatrixXd& cloud, const Matrix3d& R, const Vector3d& t)
 {
+    // Short implementation of rigid body motion on all the point of an n*3 point cloud
     cloud *= R;
     cloud.rowwise() += t.transpose();
 }
@@ -251,11 +255,15 @@ double calc_error(const MatrixXd& cloud_1, const MatrixXd& cloud_2, bool mean)
 {
     if(mean) // Return the mean squared error between two point clouds
     {
-        return (cloud_1 - cloud_2).array().pow(2).sum() / (double)cloud_1.rows();
+        double mse = (cloud_1 - cloud_2).array().pow(2).sum() / (double)cloud_1.rows();
+        cout << "mse=" << mse << endl;
+        return mse;
     }
     else // Return the sum of squared residuals between two point clouds
     {
-        return (cloud_1 - cloud_2).array().pow(2).sum();
+        double error = (cloud_1 - cloud_2).array().pow(2).sum();
+        cout << error << endl;
+        return error;
     }
 }
 
@@ -277,30 +285,176 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         Vector3d t = transform.second; // Translation vector
 
         // Update the transformation matrix
-        Matrix4d T_temp = Matrix4d::Identity();
-        T_temp.block<3,3>(0,0) = R;
-        T_temp.block<3,1>(0,3) = t;
-        T *= T_temp;
+        T.block<3,3>(0,0) *= R;
+        T.block<3,1>(0,3) += t;
 
         transform_cloud(cloud_1, R, t);
 
         // Compute the mean squared error
         double error = calc_error(cloud_1, cloud_2, true);
-        cout << "mse=" << error << endl;
 
         // Check for convergence
         if (error < icp_error_t)
         {
             cout << "         ------[ ICP Converged! ]------" << endl;
-            cout << "                  Error = " << calc_error(cloud_1, cloud_2, true) << endl;
+            cout << "Error = " << calc_error(cloud_1, cloud_2, true) << endl;
             output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
             return T;
         }
     }
 
     cout << " ------[ ICP Reached max. iterations! ]------" << endl;
-    cout << "     Mean Squared Error = " << calc_error(cloud_1, cloud_2, true) << endl;
+    cout << "Mean Squared Error = " << calc_error(cloud_1, cloud_2, true) << endl;
     output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
+    return T;
+}
+
+MatrixXd sort_matrix(MatrixXd mat)
+{
+    // Sorts a a matrix by one of the columns
+    // Columns of an mat matrix are {point_1, point_2, error}
+    // Note: the column index must be filled correctly or it will be very hard to debug
+    // Move all the rows of the matrix into a vector
+    vector<VectorXd> vec;
+    for (int i = 0; i < mat.rows(); i++)
+    {
+        vec.emplace_back(mat.row(i));
+    }
+    // This is a lambda that defines the < operation between two vectors
+    sort(vec.begin(), vec.end(), [] (VectorXd const& t1, VectorXd const& t2)
+    {
+        return t1(2) < t2(2); // The index in parentheses defines the key column
+    });
+    // Put the rows from the vector back into the matrix
+    for (int i = 0; i < mat.rows(); i++)
+    {
+        mat.row(i) = vec[i];
+    }
+    return mat;
+}
+
+MatrixXd trim(const MatrixXd& mat, const double& overlap)
+{
+    // Trims an Eigen matrix to create a smaller matrix
+    // A new matrix gets created and the data gets copied over
+    int trimmed_len = (int)(overlap * (double)mat.rows());
+    MatrixXd result(trimmed_len, mat.cols());
+    for(int i = 0; i < trimmed_len; i++)
+    {
+        result.row(i) = mat.row(i);
+    }
+    return result;
+}
+
+void reorder_2(MatrixXd& cloud_1, MatrixXd& cloud_2, const MatrixXd& indices)
+{
+    // Reorder the rows of a matrix to match the ones given by the nearest neighbor search
+    // This is used by the TR-ICP algorithm and reorders two clouds based on indices
+    // Note: the indices matrix is always shorter in dimension 0 than the clouds
+    MatrixXd result_1 = MatrixXd::Ones(indices.rows(), 3);
+    MatrixXd result_2 = MatrixXd::Ones(indices.rows(), 3);
+    for (int i = 0; i < indices.rows(); i++)
+    {
+        result_1.row(i) = cloud_1.row((int)indices(i, 0)); // Add to position i on cloud 1
+        result_2.row(i) = cloud_2.row((int)indices(i, 1)); // Add to position i on cloud 2
+    }
+    cloud_1 = result_1;
+    cloud_2 = result_2;
+}
+
+double obj_func(double x, MatrixXd nn)
+{
+    // Objective function for golden section search.
+    // e(xi) / e^(1+lambda); lambda=2
+    nn = trim(nn, x);
+    return nn.col(2).mean() / pow(x, 1 + lambda);
+}
+
+double golden_section_search(double a, double b, const double& eps, const MatrixXd& nn)
+{
+    // Golden section search to find optimal overlap parameter
+    // Default sectioning is [0.1, 0.9]
+    // a: minimum start point, b: maximum end point, eps: tolerance, nn: array for objective function
+    double x1 = b - (b - a) / phi;
+    double x2 = a + (b - a) / phi;
+    double fx1 = obj_func(x1, nn);
+    double fx2 = obj_func(x2, nn);
+    while (abs(b - a) > eps)
+    {
+        if (fx1 < fx2)
+        {
+            b = x2;
+            x2 = x1;
+            fx2 = fx1;
+            x1 = b - (b - a) / phi;
+            fx1 = obj_func(x1, nn);
+        }
+        else
+        {
+            a = x1;
+            x1 = x2;
+            fx1 = fx2;
+            x2 = a + (b - a) / phi;
+            fx2 = obj_func(x2, nn);
+        }
+    }
+    double result = (a + b) / 2;
+    cout << "xi=" << result << "; ";
+    return result;
+}
+
+Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
+{
+    // Trimmed iterative closest point algorithm implementation
+    double error_prev = 1e18; // Set the previous error to a large number
+    double error; // This variable will hold the error for reference
+    const MatrixXd cloud_2_or = cloud_2; // The original model cloud
+    MatrixXd cloud_1_tr = cloud_1; // The transformed source cloud
+    Matrix4d T = Matrix4d::Identity(); // Transformation matrix
+
+    for (int i = 0; i < tricp_iter; i++)
+    {
+        MatrixXd nn = nn_search(cloud_1, cloud_2); // Compute nearest neighbors
+
+        nn = sort_matrix(nn); // Sort the NN search result by error
+
+        xi = golden_section_search(0.1, 0.9, 0.001, nn); // G-search [min, max, tolerance, nn]
+
+        nn = trim(nn, xi); // Trim by minimum overlap parameter
+
+        reorder_2(cloud_1, cloud_2, nn); // Reorder based on indices defined in NN object
+
+        error = calc_error(cloud_1, cloud_2, true); // Compute the squared error
+
+        pair<Matrix3d, Vector3d> transform = estimate_transformation(cloud_1, cloud_2);
+        Matrix3d R = transform.first; // Rotation matrix
+        Vector3d t = transform.second; // Translation vector
+
+        // Update the transformation matrix
+        T.block<3,3>(0,0) *= R;
+        T.block<3,1>(0,3) += t;
+
+        transform_cloud(cloud_1_tr, R, t); // Transform the point cloud
+
+        cloud_1 = cloud_1_tr; // Assign transformed cloud to trimmed cloud 1
+        cloud_2 = cloud_2_or; // Assign original cloud to timmed cloud 2
+
+        // Convergence test
+        if (error < tricp_error_t || abs(error - error_prev) < tricp_error_change_t)
+        {
+            cout << "         ------[ TR-ICP Converged! ]------" << endl;
+            cout << "Mean Squared Error = " << error << endl;
+            cout << "Change of Error = " << abs(error - error_prev) << endl;
+            output_clouds(cloud_1, cloud_2, "TR-ICP"); // Write the clouds into a file
+            return T;
+        }
+        error_prev = error; // Update error change term
+    }
+
+    cout << "   ----[ TR-ICP Reached max. iterations! ]----" << endl;
+    cout << "Mean Squared Error = " << error << endl;
+    cout << "Change of Error = " << abs(error - error_prev) << endl;
+    output_clouds(cloud_1, cloud_2, "TR-ICP"); // Write the clouds into a file
     return T;
 }
 

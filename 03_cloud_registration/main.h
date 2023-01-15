@@ -33,5 +33,16 @@ void transform_cloud(MatrixXd& cloud, const Matrix3d& R, const Vector3d& t);
 
 Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
+MatrixXd sort_matrix(MatrixXd mat);
+
+MatrixXd trim(const MatrixXd& mat, const double& overlap);
+
+void reorder_2(MatrixXd& cloud_1, MatrixXd& cloud_2, const MatrixXd& indices);
+
+Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2);
+
 void output_clouds(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method);
 
+double golden_section_search(double a, double b, const double& eps, const MatrixXd& nn);
+
+double obj_func(double x, MatrixXd nn);
