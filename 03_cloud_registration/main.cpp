@@ -116,7 +116,7 @@ MatrixXd apply_init_transform(MatrixXd cloud)
         t.setZero();
     }
     // Apply transformation
-    cloud = transform_cloud(cloud, R, t);
+    transform_cloud(cloud, R, t);
     // Add noise if needed
     if(lvl_noise > 0.)
     {
@@ -202,12 +202,11 @@ MatrixXd reorder(const MatrixXd& cloud, const MatrixXd& indices)
     return result;
 }
 
-MatrixXd transform_cloud(MatrixXd cloud, const Matrix3d& R, const Vector3d& t)
+void transform_cloud(MatrixXd& cloud, const Matrix3d& R, const Vector3d& t)
 {
     // Short implementation of rigid body motion on all the point of an n*3 point cloud
     cloud *= R;
     cloud.rowwise() += t.transpose();
-    return cloud;
 }
 
 double calc_error(const MatrixXd& cloud_1, const MatrixXd& cloud_2, bool mean)
@@ -250,9 +249,9 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         T.block<3,3>(0,0) *= R;
         T.block<3,1>(0,3) += t;
 
-        cloud_1 = transform_cloud(cloud_1, R, t); // Apply the transformation to the point cloud
+        transform_cloud(cloud_1, R, t); // Apply the transformation to the point cloud
         error = calc_error(cloud_1, cloud_2, true); // Compute the mean squared error
-        iter++;
+        iter++; // Increase step counter
 
         // Check for convergence
         if (error < icp_error_t)
@@ -298,27 +297,17 @@ MatrixXd sort_matrix(MatrixXd mat)
     return mat;
 }
 
-MatrixXd trim(const MatrixXd& mat, const double& overlap)
-{
-    // Trims an Eigen matrix to create a smaller matrix
-    // A new matrix gets created and the data gets copied over
-    int trimmed_len = (int)(overlap * (double)mat.rows());
-    MatrixXd result(trimmed_len, mat.cols());
-    for(int i = 0; i < trimmed_len; i++)
-    {
-        result.row(i) = mat.row(i);
-    }
-    return result;
-}
-
-void reorder_2(MatrixXd& cloud_1, MatrixXd& cloud_2, const MatrixXd& indices)
+void reorder_trim(MatrixXd& cloud_1, MatrixXd& cloud_2, const MatrixXd& indices, const double& overlap)
 {
     // Reorder the rows of a matrix to match the ones given by the nearest neighbor search
     // This is used by the TR-ICP algorithm and reorders two clouds based on indices
     // Note: the indices matrix is always shorter in dimension 0 than the clouds
-    MatrixXd result_1 = MatrixXd::Ones(indices.rows(), 3);
-    MatrixXd result_2 = MatrixXd::Ones(indices.rows(), 3);
-    for (int i = 0; i < indices.rows(); i++)
+
+    int trimmed_len = (int)(overlap * (double)indices.rows()); // Calculate trimmed number of points
+    MatrixXd result_1(trimmed_len, 3); // Create container for trimmed cloud 1
+    MatrixXd result_2(trimmed_len, 3); // Create container for trimmed cloud 2
+
+    for (int i = 0; i < trimmed_len; i++)
     {
         result_1.row(i) = cloud_1.row((int)indices(i, 0)); // Add to position i on cloud 1
         result_2.row(i) = cloud_2.row((int)indices(i, 1)); // Add to position i on cloud 2
@@ -348,9 +337,7 @@ Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
 
         xi = golden_section_search(0.1, 0.9, 0.001, nn); // G-search [min, max, tolerance, nn]
 
-        nn = trim(nn, xi); // Trim by minimum overlap parameter
-
-        reorder_2(cloud_1, cloud_2, nn); // Reorder based on indices defined in NN object
+        reorder_trim(cloud_1, cloud_2, nn, xi); // Reorder and trim based on indices defined in NN object
 
         error = calc_error(cloud_1, cloud_2, true); // Compute the squared error
 
@@ -362,10 +349,10 @@ Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
         T.block<3,3>(0,0) *= R;
         T.block<3,1>(0,3) += t;
 
-        cloud_1_tr = transform_cloud(cloud_1_tr, R, t); // Transform the point cloud
+        transform_cloud(cloud_1_tr, R, t); // Transform the point cloud
         cloud_1 = cloud_1_tr; // Assign transformed cloud to trimmed cloud 1
         cloud_2 = cloud_2_or; // Assign original cloud to timmed cloud 2
-        iter++;
+        iter++; // Increase step counter
 
         // Convergence test
         if(error < tricp_error_t || abs(error - error_prev) < tricp_error_change_t)

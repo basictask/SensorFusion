@@ -112,6 +112,19 @@ MatrixXd vector2mat(vector<Point3d> vec)
     return result;
 }
 
+MatrixXd trim(const MatrixXd& mat, const double& overlap)
+{
+    // Trims an Eigen matrix to create a smaller matrix
+    // A new matrix gets created and the data gets copied over
+    int trimmed_len = (int)(overlap * (double)mat.rows());
+    MatrixXd result(trimmed_len, mat.cols());
+    for(int i = 0; i < trimmed_len; i++)
+    {
+        result.row(i) = mat.row(i);
+    }
+    return result;
+}
+
 double obj_func(double x, MatrixXd nn)
 {
     // Objective function for golden section search.
