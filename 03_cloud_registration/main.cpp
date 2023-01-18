@@ -1,7 +1,8 @@
+//=================[ Made by Daniel Kuknyo ]=================//
 #include <iostream>
 #include <vector>
-#include <string>
 #include <cmath>
+#include <random>
 #include "main.h"
 #include "nanoflann.hpp"
 #include </usr/include/eigen3/Eigen/Dense>
@@ -13,42 +14,39 @@ using namespace Eigen;
 using namespace happly;
 using namespace nanoflann;
 
-//=================[ Made by Daniel Kuknyo ]=================//
-
-// Parameters set by user
-const int max_leaf = 10; // Maximum leaf size for KD-tree search
-const int num_result = 1; // Number of results for KNN search
-const int icp_iter = 100; // Number of iteration for the ICP algorithm
-const double icp_error_t = 0.7; // ICP error threshold
-const int tricp_iter = 100; // Number of iterations for the TR-ICP algorithm
-const double tricp_error_t = 0.7; // TR-ICP error threshold
-const double tricp_error_change_t = 0.5; // TR-ICP error change threshold
-const double phi = (1 + sqrt(5)) / 2; // Golden ratio
-const int lambda = 2; // Tolerance parameter for golden section objective function
-
-const string output_dir = "./results/"; // The folder to save results to
-const string ply_header = "./data/ply_header.txt"; // Header to add to all output ply files
-const vector<Point3i> colors = {Point3i(174, 4, 33), Point3i(172, 255, 36)}; // RGB Colors for point clouds
-
-// Parameters set by program
-unsigned long n_rows = -1;
-string cloud_name;
+//----------[ Parameters set by program ]----------
+unsigned long n_rows; // Number of rows to process
+string cloud_name; // Name of cloud for outputting results
 double xi; // Maximum overlap parameter for tr-icp. N_po = xi * N_p
-//float timenow;
-
-// Types defined for the run
-typedef KDTreeEigenMatrixAdaptor<MatrixXd> kd_tree;
+float timenow; // Timing variable
 
 int main(int argc, char** argv)
 {
-    // Read point cloud files
-    vector<Point3d> vector_1 = read_pointcloud(argv[1]);
-    vector<Point3d> vector_2 = read_pointcloud(argv[2]);
-    n_rows = min(vector_1.size(), vector_2.size());
+    // Define the variables for point clouds
+    vector<Point3d> vector_1;
+    vector<Point3d> vector_2;
+    MatrixXd cloud_1;
+    MatrixXd cloud_2;
 
-    // Assign matrices to the vectors
-    MatrixXd cloud_1 = vector2mat(vector_1);
-    MatrixXd cloud_2 = vector2mat(vector_2);
+    // Read point clouds
+    if(argc==3 && !apply_init_transformation) // NOLINT
+    {
+        // If 2 args are given read both clouds from file
+        vector_1 = read_pointcloud(argv[1]);
+        vector_2 = read_pointcloud(argv[2]);
+        n_rows = min(vector_1.size(), vector_2.size());
+        cloud_1 = vector2mat(vector_1); // Source cloud
+        cloud_2 = vector2mat(vector_2); // Target cloud
+    }
+    else
+    {
+        // In case 1 arg is given transform the original cloud to become the model cloud
+        vector_2 = read_pointcloud(argv[2]);
+        n_rows = vector_2.size();
+        cloud_2 = vector2mat(vector_2); // Target cloud
+        cloud_1 = apply_init_transform(cloud_2); // Create source with applied transformation
+    }
+
     MatrixXd nn = nn_search(cloud_1, cloud_2);
     pair<Matrix3d, Vector3d> transformation = estimate_transformation(cloud_1, cloud_2);
 
@@ -72,8 +70,8 @@ int main(int argc, char** argv)
 
     // Run the ICP algorithm
     cout << "=====================[ ICP ]====================" << endl;
-//    Matrix4d T_icp = icp(cloud_1, cloud_2);
-//    cout << "Transformation matrix between point clouds: " << endl << T_icp << endl;
+    Matrix4d T_icp = icp(cloud_1, cloud_2);
+    cout << "Transformation matrix between point clouds: " << endl << T_icp << endl;
 
     // Run the TR-ICP algorithm
     cout << "===================[ TR-ICP ]===================" << endl;
@@ -85,94 +83,54 @@ int main(int argc, char** argv)
     return 0;
 }
 
-vector<Point3d> read_pointcloud(char* filename)
+MatrixXd apply_init_transform(MatrixXd cloud)
 {
-    // Reads a point cloud defined in a char sequence received as a parameter
-    // Note: the ply file must contain a header or the container will be empty
-
-    // Sets the cloud_name variable to the name of the point cloud
-    // This is just for outputting the correct variable name
-    string temp = string(filename);
-    const size_t last_slash_idx = temp.find_last_of("\\/");
-    if (string::npos != last_slash_idx)
+    // Applies rotation, translation and Gaussian noise to the target point cloud in order to create the source cloud
+    // Modify global variaables lvl_noise, lvl_translation and lvl_rotation defined in main.h to change how it behaves
+    // Create the rotation matrix
+    if(lvl_noise == 0 && lvl_translation == 0 && lvl_rotation == 0) // NOLINT
     {
-        temp.erase(0, last_slash_idx + 1);
-    }
-    const size_t period_idx = temp.rfind('.');
-    if (string::npos != period_idx)
-    {
-        temp.erase(period_idx);
-    }
-    if(cloud_name.empty()) // Only set it on the first iteration
-    {
-        cloud_name.assign(temp);
-    }
-
-    // Reads a ply file of <header> px py pz nx ny nz into a vector of 3D points
-    // There must be a header ending with end_header
-    // The first 3 values in a line must be the x y z coordinate
-    bool read_flag = false;
-    string line;
-    ifstream myfile;
-    myfile.open(filename);
-    vector<Point3d> result;
-
-    if(!myfile.is_open())
-    {
-        cout << "Error opening file: " << filename << endl;
+        cout << "Unable to perform initial transformation. All the params are set to 0 [main.h]." << endl;
         exit(EXIT_FAILURE);
     }
-    try
+    // Define the rotation matrix. Note: This is a rotation around the y axis.
+    Matrix3d R;
+    if(lvl_rotation > 0.)
     {
-        while(getline(myfile, line)) // Iterate over the lines in the ply file
+        R << cos(lvl_rotation), 0, sin(lvl_rotation),
+                             0, 1, 0,
+            -sin(lvl_rotation), 0, cos(lvl_rotation);
+    }
+    else
+    {
+        R = Matrix3d::Identity();
+    }
+    // Create the translation vector. Note: This is a translation on the y axis
+    Vector3d t;
+    if(lvl_translation > 0.)
+    {
+        t << 0, lvl_translation, 0;
+    }
+    else
+    {
+        t.setZero();
+    }
+    // Apply transformation
+    cloud = transform_cloud(cloud, R, t);
+    // Add noise if needed
+    if(lvl_noise > 0.)
+    {
+        default_random_engine generator; // NOLINT
+        normal_distribution<double> dist(0, lvl_noise); // Create Gaussian object
+        for(int i = 0; i < cloud.rows(); i++)
         {
-            if(read_flag) // If the header is passed
+            for(int j = 0; j < cloud.cols(); j++)
             {
-                string arr[3];
-                int i = 0;
-                stringstream ssin(line); // Create a stringstream from line
-                while (ssin.good() && i < 3) // Iterate over tokens in the line
-                {
-                    ssin >> arr[i];
-                    i++;
-                }
-                if(i == 3) // Only add if there's 3 coordinates
-                {
-                    Point3d tmp = {stof(arr[0]), stof(arr[1]), stof(arr[2])}; // Create and add point to the vector
-                    result.push_back(tmp);
-                }
-            }
-            if(line.find("end_header") != string::npos) // If header ended set flag
-            {
-                read_flag = true;
+                cloud(i, j) += dist(generator); // Add Gaussian noise to the point
             }
         }
     }
-    catch (Exception &ex)
-    {
-        cout << "Error while reading data." << endl;
-        return result;
-    }
-    if(result.empty())
-    {
-        cout << "Error reading ply file. Header not found." << endl;
-    }
-
-    return result;
-}
-
-MatrixXd vector2mat(vector<Point3d> vec)
-{
-    // Converts a vector of 3D (double) points into an Eigen matrix
-    // We need this conversion because Eigen matrices are of fixed size and point clouds aren't
-    MatrixXd result(n_rows, 3);
-    for(int i = 0; i < n_rows; i++)
-    {
-        result(i, 0) = vec[i].x;
-        result(i, 1) = vec[i].y;
-        result(i, 2) = vec[i].z;
-    }
-    return result;
+    return cloud;
 }
 
 MatrixXd nn_search(const MatrixXd& cloud_1, MatrixXd cloud_2)
@@ -244,11 +202,12 @@ MatrixXd reorder(const MatrixXd& cloud, const MatrixXd& indices)
     return result;
 }
 
-void transform_cloud(MatrixXd& cloud, const Matrix3d& R, const Vector3d& t)
+MatrixXd transform_cloud(MatrixXd cloud, const Matrix3d& R, const Vector3d& t)
 {
     // Short implementation of rigid body motion on all the point of an n*3 point cloud
     cloud *= R;
     cloud.rowwise() += t.transpose();
+    return cloud;
 }
 
 double calc_error(const MatrixXd& cloud_1, const MatrixXd& cloud_2, bool mean)
@@ -269,15 +228,18 @@ double calc_error(const MatrixXd& cloud_1, const MatrixXd& cloud_2, bool mean)
 
 Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
 {
-    Matrix4d T = Matrix4d::Identity(); // Transformation matrix
+    double error; // This variable will hold the error for reference
+    int iter = 0; // Iteration counter
+    Matrix4d T = Matrix4d::Identity(); // Predicted transformation matrix
+    Matrix4d T_true = estimate_T_true(cloud_1, cloud_2); // True transformation matrix (for logging)
+    time_t start, end; // Time variables
+    time(&start); // Time starts here
 
-    for (int i = 0; i < icp_iter; i++)
+    for(int i = 0; i < icp_iter; i++)
     {
-        // Compute nearest neighbors
-        MatrixXd nn = nn_search(cloud_1, cloud_2);
+        MatrixXd nn = nn_search(cloud_1, cloud_2); // Compute nearest neighbors
 
-        // Reorder points
-        cloud_1 = reorder(cloud_1, nn);
+        cloud_1 = reorder(cloud_1, nn); // Reorder points
 
         // Estimate the transformation between the point clouds
         pair<Matrix3d, Vector3d> transform = estimate_transformation(cloud_1, cloud_2);
@@ -288,24 +250,27 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         T.block<3,3>(0,0) *= R;
         T.block<3,1>(0,3) += t;
 
-        transform_cloud(cloud_1, R, t);
-
-        // Compute the mean squared error
-        double error = calc_error(cloud_1, cloud_2, true);
+        cloud_1 = transform_cloud(cloud_1, R, t); // Apply the transformation to the point cloud
+        error = calc_error(cloud_1, cloud_2, true); // Compute the mean squared error
+        iter++;
 
         // Check for convergence
         if (error < icp_error_t)
         {
-            cout << "         ------[ ICP Converged! ]------" << endl;
-            cout << "Error = " << calc_error(cloud_1, cloud_2, true) << endl;
-            output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
-            return T;
+            cout << "        ------[ ICP Converged! ]------" << endl;
+            break;
+        }
+        if(i == icp_iter - 1)
+        {
+            cout << " ------[ ICP Reached max. iterations! ]------" << endl;
         }
     }
 
-    cout << " ------[ ICP Reached max. iterations! ]------" << endl;
-    cout << "Mean Squared Error = " << calc_error(cloud_1, cloud_2, true) << endl;
+    time(&end); // End timer
+    timenow = float(end - start); // Calculate duration of the algorithm
+    cout << "Mean Squared Error = " << error << endl;
     output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
+    log_execution(cloud_1, cloud_2, "ICP", error, iter, (iter < icp_iter - 1), T_true, T); // Write into log file
     return T;
 }
 
@@ -362,57 +327,20 @@ void reorder_2(MatrixXd& cloud_1, MatrixXd& cloud_2, const MatrixXd& indices)
     cloud_2 = result_2;
 }
 
-double obj_func(double x, MatrixXd nn)
-{
-    // Objective function for golden section search.
-    // e(xi) / e^(1+lambda); lambda=2
-    nn = trim(nn, x);
-    return nn.col(2).mean() / pow(x, 1 + lambda);
-}
-
-double golden_section_search(double a, double b, const double& eps, const MatrixXd& nn)
-{
-    // Golden section search to find optimal overlap parameter
-    // Default sectioning is [0.1, 0.9]
-    // a: minimum start point, b: maximum end point, eps: tolerance, nn: array for objective function
-    double x1 = b - (b - a) / phi;
-    double x2 = a + (b - a) / phi;
-    double fx1 = obj_func(x1, nn);
-    double fx2 = obj_func(x2, nn);
-    while (abs(b - a) > eps)
-    {
-        if (fx1 < fx2)
-        {
-            b = x2;
-            x2 = x1;
-            fx2 = fx1;
-            x1 = b - (b - a) / phi;
-            fx1 = obj_func(x1, nn);
-        }
-        else
-        {
-            a = x1;
-            x1 = x2;
-            fx1 = fx2;
-            x2 = a + (b - a) / phi;
-            fx2 = obj_func(x2, nn);
-        }
-    }
-    double result = (a + b) / 2;
-    cout << "xi=" << result << "; ";
-    return result;
-}
-
 Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
 {
     // Trimmed iterative closest point algorithm implementation
-    double error_prev = 1e18; // Set the previous error to a large number
     double error; // This variable will hold the error for reference
-    const MatrixXd cloud_2_or = cloud_2; // The original model cloud
+    double error_prev = 1e18; // Set the previous error to a large number
+    int iter = 0; // Iteration counter
+    Matrix4d T = Matrix4d::Identity(); // Predicted transformation matrix
+    Matrix4d T_true = estimate_T_true(cloud_1, cloud_2); // True transformation matrix (for logging)
     MatrixXd cloud_1_tr = cloud_1; // The transformed source cloud
-    Matrix4d T = Matrix4d::Identity(); // Transformation matrix
+    const MatrixXd cloud_2_or = cloud_2; // The original model cloud
+    time_t start, end; // Time variables
+    time(&start); // Time starts here
 
-    for (int i = 0; i < tricp_iter; i++)
+    for(int i = 0; i < tricp_iter; i++)
     {
         MatrixXd nn = nn_search(cloud_1, cloud_2); // Compute nearest neighbors
 
@@ -434,82 +362,30 @@ Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
         T.block<3,3>(0,0) *= R;
         T.block<3,1>(0,3) += t;
 
-        transform_cloud(cloud_1_tr, R, t); // Transform the point cloud
-
+        cloud_1_tr = transform_cloud(cloud_1_tr, R, t); // Transform the point cloud
         cloud_1 = cloud_1_tr; // Assign transformed cloud to trimmed cloud 1
         cloud_2 = cloud_2_or; // Assign original cloud to timmed cloud 2
+        iter++;
 
         // Convergence test
-        if (error < tricp_error_t || abs(error - error_prev) < tricp_error_change_t)
+        if(error < tricp_error_t || abs(error - error_prev) < tricp_error_change_t)
         {
-            cout << "         ------[ TR-ICP Converged! ]------" << endl;
-            cout << "Mean Squared Error = " << error << endl;
-            cout << "Change of Error = " << abs(error - error_prev) << endl;
-            output_clouds(cloud_1, cloud_2, "TR-ICP"); // Write the clouds into a file
-            return T;
+            cout << "        ------[ TR-ICP Converged! ]------" << endl;
+            break;
+        }
+        if(i == tricp_iter - 1)
+        {
+            cout << "   ----[ TR-ICP Reached max. iterations! ]----" << endl;
         }
         error_prev = error; // Update error change term
     }
 
-    cout << "   ----[ TR-ICP Reached max. iterations! ]----" << endl;
+    time(&end); // End timer
+    timenow = float(end - start); // Calculate duration of the algorithm
     cout << "Mean Squared Error = " << error << endl;
     cout << "Change of Error = " << abs(error - error_prev) << endl;
     output_clouds(cloud_1, cloud_2, "TR-ICP"); // Write the clouds into a file
+    log_execution(cloud_1, cloud_2, "TR-ICP", error, iter, (iter < tricp_iter - 1), T_true, T); // Write into log file
     return T;
-}
-
-void output_clouds(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method)
-{
-    // Outputs two point clouds into a single ply file with two colors defined in the parameter section
-    // The ply header is defined in the ./data/ folder and can be customized
-    // The number of element vertices gets calculated dynamically: n_rows*2
-
-    // Define the header file
-    string line;
-    ifstream header_file;
-    header_file.open(ply_header);
-
-    // Define the output file
-    stringstream out3d;
-    out3d << output_dir << cloud_name << "_method=" << method << ".ply";
-    ofstream out_file(out3d.str());
-    cout << "Printing: " << out3d.str() << "... ";
-
-    if(!header_file.is_open())
-    {
-        cout << "Error opening header file: " << ply_header << endl;
-        exit(EXIT_FAILURE);
-    }
-    try
-    {
-        // Output header to the beginning of the ply
-        while(getline(header_file, line))
-        {
-            out_file << line << endl;
-            if(line.find("ascii") != string::npos) // Element vertex property -> n_rows*2 for the 2 clouds
-            {
-                out_file << "element vertex " << (n_rows * 2) << endl;
-            }
-        }
-        header_file.close();
-
-        for(int i = 0; i < n_rows; i++)
-        {
-            // Add second point with second color
-            out_file << cloud_1(i, 0) << " " << cloud_1(i, 1) << " " << cloud_1(i, 2) << " ";
-            out_file << colors[0].x << " " << colors[0].y << " " << colors[0].z << endl;
-
-            // Add second point with second color
-            out_file << cloud_2(i, 0) << " " << cloud_2(i, 1) << " " << cloud_2(i, 2) << " ";
-            out_file << colors[1].x << " " << colors[1].y << " " << colors[1].z << endl;
-        }
-        out_file.close();
-    }
-    catch (Exception &ex)
-    {
-        cout << "Error while writing " << out3d.str() << endl;
-    }
-
-    cout << "Done." << endl;
 }
 
