@@ -70,17 +70,16 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
 MatrixXd sort_matrix(MatrixXd mat);
 
-void reorder_trim(MatrixXd& cloud_1, MatrixXd& cloud_2, const MatrixXd& indices, const double& overlap);
+void reorder_trim(const MatrixXd& cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
+                  const MatrixXd& nn, const int& trimmed_len);
 
-Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2);
+Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
 //----------------[ Methods for suppl ]-----------------
 
 vector<Point3d> read_pointcloud(char* filename);
 
 MatrixXd vector2mat(vector<Point3d> vec);
-
-MatrixXd trim(const MatrixXd& mat, const double& overlap);
 
 double obj_func(double x, MatrixXd nn);
 

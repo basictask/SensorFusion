@@ -237,7 +237,7 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
     for(int i = 0; i < icp_iter; i++)
     {
         MatrixXd nn = nn_search(cloud_1, cloud_2); // Compute nearest neighbors
-
+        
         cloud_1 = reorder(cloud_1, nn); // Reorder points
 
         // Estimate the transformation between the point clouds
@@ -297,26 +297,19 @@ MatrixXd sort_matrix(MatrixXd mat)
     return mat;
 }
 
-void reorder_trim(MatrixXd& cloud_1, MatrixXd& cloud_2, const MatrixXd& indices, const double& overlap)
+void reorder_trim(const MatrixXd& cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
+                  const MatrixXd& nn, const int& trimmed_len)
 {
     // Reorder the rows of a matrix to match the ones given by the nearest neighbor search
     // This is used by the TR-ICP algorithm and reorders two clouds based on indices
-    // Note: the indices matrix is always shorter in dimension 0 than the clouds
-
-    int trimmed_len = (int)(overlap * (double)indices.rows()); // Calculate trimmed number of points
-    MatrixXd result_1(trimmed_len, 3); // Create container for trimmed cloud 1
-    MatrixXd result_2(trimmed_len, 3); // Create container for trimmed cloud 2
-
     for (int i = 0; i < trimmed_len; i++)
     {
-        result_1.row(i) = cloud_1.row((int)indices(i, 0)); // Add to position i on cloud 1
-        result_2.row(i) = cloud_2.row((int)indices(i, 1)); // Add to position i on cloud 2
+        cloud_1_new.row(i) = cloud_1.row((int)nn(i, 0)); // Add to position i on cloud 1
+        cloud_2_new.row(i) = cloud_2.row((int)nn(i, 1)); // Add to position i on cloud 2
     }
-    cloud_1 = result_1;
-    cloud_2 = result_2;
 }
 
-Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
+Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
 {
     // Trimmed iterative closest point algorithm implementation
     double error; // This variable will hold the error for reference
@@ -324,8 +317,6 @@ Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
     int iter = 0; // Iteration counter
     Matrix4d T = Matrix4d::Identity(); // Predicted transformation matrix
     Matrix4d T_true = estimate_T_true(cloud_1, cloud_2); // True transformation matrix (for logging)
-    MatrixXd cloud_1_tr = cloud_1; // The transformed source cloud
-    const MatrixXd cloud_2_or = cloud_2; // The original model cloud
     time_t start, end; // Time variables
     time(&start); // Time starts here
 
@@ -337,11 +328,14 @@ Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
 
         xi = golden_section_search(0.1, 0.9, 0.001, nn); // G-search [min, max, tolerance, nn]
 
-        reorder_trim(cloud_1, cloud_2, nn, xi); // Reorder and trim based on indices defined in NN object
+        int trimmed_len = (int)(xi * (double)nn.rows()); // Get new length for matrix
+        MatrixXd cloud_1_new(trimmed_len, cloud_1.cols());
+        MatrixXd cloud_2_new(trimmed_len, cloud_2.cols());
+        reorder_trim(cloud_1, cloud_2, cloud_1_new, cloud_2_new, nn, trimmed_len); // Restructure into new containers
 
-        error = calc_error(cloud_1, cloud_2, true); // Compute the squared error
+        error = calc_error(cloud_1_new, cloud_2_new, true); // Compute the mean squared error
 
-        pair<Matrix3d, Vector3d> transform = estimate_transformation(cloud_1, cloud_2);
+        pair<Matrix3d, Vector3d> transform = estimate_transformation(cloud_1_new, cloud_2_new);
         Matrix3d R = transform.first; // Rotation matrix
         Vector3d t = transform.second; // Translation vector
 
@@ -349,9 +343,7 @@ Matrix4d tr_icp(MatrixXd cloud_1, MatrixXd cloud_2)
         T.block<3,3>(0,0) *= R;
         T.block<3,1>(0,3) += t;
 
-        transform_cloud(cloud_1_tr, R, t); // Transform the point cloud
-        cloud_1 = cloud_1_tr; // Assign transformed cloud to trimmed cloud 1
-        cloud_2 = cloud_2_or; // Assign original cloud to timmed cloud 2
+        transform_cloud(cloud_1, R, t); // Transform the point cloud
         iter++; // Increase step counter
 
         // Convergence test
