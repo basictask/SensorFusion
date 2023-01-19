@@ -15,7 +15,7 @@ using namespace happly;
 using namespace nanoflann;
 
 //----------[ Parameters set by program ]----------
-unsigned long n_rows; // Number of rows to process
+long n_rows; // Number of rows to process
 string cloud_name; // Name of cloud for outputting results
 double xi; // Maximum overlap parameter for tr-icp. N_po = xi * N_p
 float timenow; // Timing variable
@@ -34,16 +34,16 @@ int main(int argc, char** argv)
         // If 2 args are given read both clouds from file
         vector_1 = read_pointcloud(argv[1]);
         vector_2 = read_pointcloud(argv[2]);
-        n_rows = min(vector_1.size(), vector_2.size());
-        cloud_1 = vector2mat(vector_1); // Source cloud
-        cloud_2 = vector2mat(vector_2); // Target cloud
+        n_rows = (long)min(vector_1.size(), vector_2.size());
+        cloud_1 = vector2mat(vector_1, n_rows); // Source cloud
+        cloud_2 = vector2mat(vector_2, n_rows); // Target cloud
     }
     else
     {
         // In case 1 arg is given transform the original cloud to become the model cloud
         vector_2 = read_pointcloud(argv[2]);
-        n_rows = vector_2.size();
-        cloud_2 = vector2mat(vector_2); // Target cloud
+        n_rows = (long)vector_2.size();
+        cloud_2 = vector2mat(vector_2, n_rows); // Target cloud
         cloud_1 = apply_init_transform(cloud_2); // Create source with applied transformation
     }
 
@@ -86,7 +86,7 @@ int main(int argc, char** argv)
 MatrixXd apply_init_transform(MatrixXd cloud)
 {
     // Applies rotation, translation and Gaussian noise to the target point cloud in order to create the source cloud
-    // Modify global variaables lvl_noise, lvl_translation and lvl_rotation defined in main.h to change how it behaves
+    // Modify global variables lvl_noise, lvl_translation and lvl_rotation defined in main.h to change how it behaves
     // Create the rotation matrix
     if(lvl_noise == 0 && lvl_translation == 0 && lvl_rotation == 0) // NOLINT
     {
@@ -297,16 +297,28 @@ MatrixXd sort_matrix(MatrixXd mat)
     return mat;
 }
 
-void reorder_trim(const MatrixXd& cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
-                  const MatrixXd& nn, const int& trimmed_len)
+void reorder_trim(MatrixXd cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
+                  const MatrixXd& nn, const long& trimmed_len)
 {
     // Reorder the rows of a matrix to match the ones given by the nearest neighbor search
     // This is used by the TR-ICP algorithm and reorders two clouds based on indices
-    for (int i = 0; i < trimmed_len; i++)
+    // Match the indices from NN search
+    double error_threshold = sort_matrix(nn)(trimmed_len, 2); // Select the largest trimmed error
+    vector<Point3d> vector_1; // Cloud_1 correspondence
+    vector<Point3d> vector_2; // Cloud_2 correspondence
+    int i = 0;
+    while(vector_1.size() < trimmed_len && i < nn.rows())
     {
-        cloud_1_new.row(i) = cloud_1.row((int)nn(i, 0)); // Add to position i on cloud 1
-        cloud_2_new.row(i) = cloud_2.row((int)nn(i, 1)); // Add to position i on cloud 2
+        double error = nn(i, 2);
+        if(error <= error_threshold)
+        {
+            vector_1.emplace_back(Point3d(cloud_1(i, 0), cloud_1(i, 1), cloud_1(i, 2))); // NOLINT
+            vector_2.emplace_back(Point3d(cloud_2(i, 0), cloud_2(i, 1), cloud_2(i, 2))); // NOLINT
+        }
+        i++;
     }
+    cloud_1_new = vector2mat(vector_1, trimmed_len);
+    cloud_2_new = vector2mat(vector_2, trimmed_len);
 }
 
 Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
@@ -324,11 +336,11 @@ Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
     {
         MatrixXd nn = nn_search(cloud_1, cloud_2); // Compute nearest neighbors
 
-        nn = sort_matrix(nn); // Sort the NN search result by error
+        cloud_1 = reorder(cloud_1, nn);
 
         xi = golden_section_search(0.1, 0.9, 0.001, nn); // G-search [min, max, tolerance, nn]
 
-        int trimmed_len = (int)(xi * (double)nn.rows()); // Get new length for matrix
+        long trimmed_len = (long)(xi * (double)nn.rows()); // Get new length for matrix
         MatrixXd cloud_1_new(trimmed_len, cloud_1.cols());
         MatrixXd cloud_2_new(trimmed_len, cloud_2.cols());
         reorder_trim(cloud_1, cloud_2, cloud_1_new, cloud_2_new, nn, trimmed_len); // Restructure into new containers

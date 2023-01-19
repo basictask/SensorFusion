@@ -18,7 +18,7 @@ using namespace happly;
 using namespace nanoflann;
 
 //----------[ Parameters set by program ]----------
-extern unsigned long n_rows; // NOLINT
+extern long n_rows; // NOLINT
 extern string cloud_name; // NOLINT
 extern double xi; // NOLINT
 extern float timenow; // NOLINT
@@ -98,12 +98,12 @@ vector<Point3d> read_pointcloud(char* filename)
     return result;
 }
 
-MatrixXd vector2mat(vector<Point3d> vec)
+MatrixXd vector2mat(vector<Point3d> vec, const long& len)
 {
     // Converts a vector of 3D (double) points into an Eigen matrix
     // We need this conversion because Eigen matrices are of fixed size and point clouds aren't
-    MatrixXd result(n_rows, 3);
-    for(int i = 0; i < n_rows; i++)
+    MatrixXd result(len, 3);
+    for(int i = 0; i < len; i++)
     {
         result(i, 0) = vec[i].x;
         result(i, 1) = vec[i].y;

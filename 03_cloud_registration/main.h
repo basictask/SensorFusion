@@ -44,7 +44,7 @@ const string ply_header = "./data/ply_header.txt"; // Header to add to all outpu
 const vector<Point3i> colors = {Point3i(174, 4, 33), Point3i(172, 255, 36)}; // RGB Colors for point clouds
 
 //============[ Parameters set by program ]===========
-extern unsigned long n_rows;
+extern long n_rows;
 extern string cloud_name;
 extern double xi;
 extern float timenow;
@@ -70,8 +70,8 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
 MatrixXd sort_matrix(MatrixXd mat);
 
-void reorder_trim(const MatrixXd& cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
-                  const MatrixXd& nn, const int& trimmed_len);
+void reorder_trim(MatrixXd cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
+                  const MatrixXd& nn, const long& trimmed_len);
 
 Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
@@ -79,7 +79,7 @@ Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
 vector<Point3d> read_pointcloud(char* filename);
 
-MatrixXd vector2mat(vector<Point3d> vec);
+MatrixXd vector2mat(vector<Point3d> vec, const long& len);
 
 double obj_func(double x, MatrixXd nn);
 
