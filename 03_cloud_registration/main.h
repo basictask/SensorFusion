@@ -31,10 +31,10 @@ const int max_leaf = 10; // Maximum leaf size for KD-tree search
 const int num_result = 1; // Number of results for KNN search
 const int icp_iter = 50; // Number of iteration for the ICP algorithm
 const double icp_error_t = 0.001; // ICP error threshold
-const double icp_error_change_t = 1.0; // ICP error change threshold
+const double icp_error_change_t = 0.5; // ICP error change threshold
 const int tricp_iter = 50; // Number of iterations for the TR-ICP algorithm
 const double tricp_error_t = 0.001; // TR-ICP error threshold
-const double tricp_error_change_t = 1.0; // TR-ICP error change threshold
+const double tricp_error_change_t = 0.5; // TR-ICP error change threshold
 const double phi = (1 + sqrt(5)) / 2; // Golden ratio by definition
 const int lambda = 2; // Tolerance parameter for golden section objective function
 
