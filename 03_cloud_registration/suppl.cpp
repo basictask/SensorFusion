@@ -263,7 +263,7 @@ void log_execution(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const strin
      ";" << error <<
      ";" << n_iter <<
      ";" << converged <<
-     ";" << timenow;
+     ";" << timenow << ";";
 
     // Output initial transformation parameters
     if(apply_init_transformation) // NOLINT
