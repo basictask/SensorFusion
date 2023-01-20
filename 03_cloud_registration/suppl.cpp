@@ -69,7 +69,7 @@ vector<Point3d> read_pointcloud(char* filename)
                 string arr[3];
                 int i = 0;
                 stringstream ssin(line); // Create a stringstream from line
-                while (ssin.good() && i < 3) // Iterate over tokens in the line
+                while(ssin.good() && i < 3) // Iterate over tokens in the line
                 {
                     ssin >> arr[i];
                     i++;
@@ -79,6 +79,10 @@ vector<Point3d> read_pointcloud(char* filename)
                     Point3d tmp = {stof(arr[0]), stof(arr[1]), stof(arr[2])}; // Create and add point to the vector
                     result.push_back(tmp);
                 }
+                else // Reader reached element vertex property
+                {
+                    break;
+                }
             }
             if(line.find("end_header") != string::npos) // If header ended set flag
             {
@@ -86,7 +90,7 @@ vector<Point3d> read_pointcloud(char* filename)
             }
         }
     }
-    catch (Exception &ex)
+    catch(Exception &ex)
     {
         cout << "Error while reading data." << endl;
         return result;
@@ -163,7 +167,6 @@ void output_clouds(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const strin
     string line;
     ifstream header_file;
     header_file.open(ply_header);
-
     // Define the output file
     stringstream out3d;
     out3d << output_dir << cloud_name << "_method=" << method;

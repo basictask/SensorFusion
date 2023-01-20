@@ -29,7 +29,7 @@ int main(int argc, char** argv)
     MatrixXd cloud_2;
 
     // Read point clouds
-    if(argc==3 && !apply_init_transformation) // NOLINT
+    if(argc == 3 && !apply_init_transformation) // NOLINT
     {
         // If 2 args are given read both clouds from file
         vector_1 = read_pointcloud(argv[1]);
@@ -63,7 +63,7 @@ int main(int argc, char** argv)
     cout << "===============[ Transformation ]===============" << endl;
     cout << "Rotation matrix" << endl << transformation.first << endl << endl;
     cout << "Translation vector" << endl << transformation.second << endl << endl;
-    cout << "Mean Squared Error = " << calc_error(cloud_1, cloud_2, true) << endl;
+    calc_error(cloud_1, cloud_2, true);
 
     // Combine unregistered clouds to see the data before registration
     output_clouds(cloud_1, cloud_2, "before_registration");
@@ -220,7 +220,7 @@ double calc_error(const MatrixXd& cloud_1, const MatrixXd& cloud_2, bool mean)
     else // Return the sum of squared residuals between two point clouds
     {
         double error = (cloud_1 - cloud_2).array().pow(2).sum();
-        cout << error << endl;
+        cout << "ssd=" << error << endl;
         return error;
     }
 }
@@ -256,18 +256,19 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         // Check for convergence
         if (error < icp_error_t)
         {
-            cout << "        ------[ ICP Converged! ]------" << endl;
+            cout << "---------------[ ICP Converged! ]---------------" << endl;
             break;
         }
         if(i == icp_iter - 1)
         {
-            cout << " ------[ ICP Reached max. iterations! ]------" << endl;
+            cout << "---------[ ICP Reached max. iterations! ]-------" << endl;
         }
     }
 
     time(&end); // End timer
     timenow = float(end - start); // Calculate duration of the algorithm
     cout << "Mean Squared Error = " << error << endl;
+    cout << "Steps taken = " << iter << endl;
     output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
     log_execution(cloud_1, cloud_2, "ICP", error, iter, (iter < icp_iter - 1), T_true, T); // Write into log file
     return T;
@@ -297,26 +298,25 @@ MatrixXd sort_matrix(MatrixXd mat)
     return mat;
 }
 
-void reorder_trim(MatrixXd cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
+void reorder_trim(const MatrixXd& cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
                   const MatrixXd& nn, const long& trimmed_len)
 {
     // Reorder the rows of a matrix to match the ones given by the nearest neighbor search
     // This is used by the TR-ICP algorithm and reorders two clouds based on indices
-    // Match the indices from NN search
     double error_threshold = sort_matrix(nn)(trimmed_len, 2); // Select the largest trimmed error
     vector<Point3d> vector_1; // Cloud_1 correspondence
     vector<Point3d> vector_2; // Cloud_2 correspondence
     int i = 0;
-    while(vector_1.size() < trimmed_len && i < nn.rows())
+    while(vector_1.size() < trimmed_len && i < nn.rows()) // Iterate until there are no more points
     {
-        double error = nn(i, 2);
-        if(error <= error_threshold)
+        if(nn(i, 2) <= error_threshold) // Decide if a correspondence is going to be trimmed
         {
             vector_1.emplace_back(Point3d(cloud_1(i, 0), cloud_1(i, 1), cloud_1(i, 2))); // NOLINT
             vector_2.emplace_back(Point3d(cloud_2(i, 0), cloud_2(i, 1), cloud_2(i, 2))); // NOLINT
         }
         i++;
     }
+    // Overwrite the clouds with the trimmed ones
     cloud_1_new = vector2mat(vector_1, trimmed_len);
     cloud_2_new = vector2mat(vector_2, trimmed_len);
 }
@@ -361,12 +361,12 @@ Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         // Convergence test
         if(error < tricp_error_t || abs(error - error_prev) < tricp_error_change_t)
         {
-            cout << "        ------[ TR-ICP Converged! ]------" << endl;
+            cout << "--------------[ TR-ICP Converged! ]-------------" << endl;
             break;
         }
         if(i == tricp_iter - 1)
         {
-            cout << "   ----[ TR-ICP Reached max. iterations! ]----" << endl;
+            cout << "-------[ TR-ICP Reached max. iterations! ]------" << endl;
         }
         error_prev = error; // Update error change term
     }
@@ -375,6 +375,7 @@ Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
     timenow = float(end - start); // Calculate duration of the algorithm
     cout << "Mean Squared Error = " << error << endl;
     cout << "Change of Error = " << abs(error - error_prev) << endl;
+    cout << "Steps taken = " << iter << endl;
     output_clouds(cloud_1, cloud_2, "TR-ICP"); // Write the clouds into a file
     log_execution(cloud_1, cloud_2, "TR-ICP", error, iter, (iter < tricp_iter - 1), T_true, T); // Write into log file
     return T;

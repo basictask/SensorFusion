@@ -22,9 +22,9 @@ using namespace cv;
 
 //-----[ Initial transformation for the clouds ]-----
 const bool apply_init_transformation = false;
-const double lvl_noise = 1; // Level of noise to add to the original point cloud (Gaussian)
-const double lvl_rotation = 20; // Rotation to add to the original point cloud (in degrees)
-const double lvl_translation = 5; // Translation to add to the original point cloud (y axis)
+const double lvl_noise = 0; // Level of noise to add to the original point cloud (Gaussian)
+const double lvl_rotation = 5; // Rotation to add to the original point cloud (in degrees)
+const double lvl_translation = 2; // Translation to add to the original point cloud (y axis)
 
 //--------[ Thresholds and other parameters ]--------
 const int max_leaf = 10; // Maximum leaf size for KD-tree search
@@ -70,7 +70,7 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
 
 MatrixXd sort_matrix(MatrixXd mat);
 
-void reorder_trim(MatrixXd cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
+void reorder_trim(const MatrixXd& cloud_1, const MatrixXd& cloud_2, MatrixXd& cloud_1_new, MatrixXd& cloud_2_new,
                   const MatrixXd& nn, const long& trimmed_len);
 
 Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2);
