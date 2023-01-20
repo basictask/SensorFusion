@@ -290,9 +290,9 @@ string print_mat(const MatrixXd& mat, const string& sep)
     // Prints the contents of a matrix into a single-line string (logging purposes)
     // E.g. the 3x3 identity matrix with sep="," --> "1,0,0,0,1,0,0,0,1"
     stringstream result;
-    for(int i = 0; i < mat.rows(); i++)
+    for(int i = 0; i < mat.rows(); i++) // Iterate rows
     {
-        for(int j = 0; j < mat.cols(); j++)
+        for(int j = 0; j < mat.cols(); j++) // Iterate columns
         {
             if(i == 0 && j == 0) // Fencepost value
             {

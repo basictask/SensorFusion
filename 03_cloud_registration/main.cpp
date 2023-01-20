@@ -228,6 +228,7 @@ double calc_error(const MatrixXd& cloud_1, const MatrixXd& cloud_2, bool mean)
 Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
 {
     double error; // This variable will hold the error for reference
+    double error_prev = 1e18; // Set the previous error to a large number
     int iter = 0; // Iteration counter
     Matrix4d T = Matrix4d::Identity(); // Predicted transformation matrix
     Matrix4d T_true = estimate_T_true(cloud_1, cloud_2); // True transformation matrix (for logging)
@@ -250,11 +251,11 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         T.block<3,1>(0,3) += t;
 
         transform_cloud(cloud_1, R, t); // Apply the transformation to the point cloud
-        error = calc_error(cloud_1, cloud_2, true); // Compute the mean squared error
+        error = calc_error(cloud_1, cloud_2, false); // Compute the mean squared error
         iter++; // Increase step counter
 
         // Check for convergence
-        if (error < icp_error_t)
+        if (error < icp_error_t || abs(error - error_prev) < icp_error_change_t)
         {
             cout << "---------------[ ICP Converged! ]---------------" << endl;
             break;
@@ -263,11 +264,13 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         {
             cout << "---------[ ICP Reached max. iterations! ]-------" << endl;
         }
+        error_prev = error; // Update error change term
     }
 
     time(&end); // End timer
     timenow = float(end - start); // Calculate duration of the algorithm
     cout << "Mean Squared Error = " << error << endl;
+    cout << "Change of Error = " << abs(error - error_prev) << endl;
     cout << "Steps taken = " << iter << endl;
     output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
     log_execution(cloud_1, cloud_2, "ICP", error, iter, (iter < icp_iter - 1), T_true, T); // Write into log file
@@ -345,7 +348,7 @@ Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
         MatrixXd cloud_2_new(trimmed_len, cloud_2.cols());
         reorder_trim(cloud_1, cloud_2, cloud_1_new, cloud_2_new, nn, trimmed_len); // Restructure into new containers
 
-        error = calc_error(cloud_1_new, cloud_2_new, true); // Compute the mean squared error
+        error = calc_error(cloud_1_new, cloud_2_new, false); // Compute the mean squared error
 
         pair<Matrix3d, Vector3d> transform = estimate_transformation(cloud_1_new, cloud_2_new);
         Matrix3d R = transform.first; // Rotation matrix
