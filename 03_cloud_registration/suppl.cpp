@@ -169,12 +169,12 @@ void output_clouds(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const strin
     header_file.open(ply_header);
     // Define the output file
     stringstream out3d;
-    out3d << output_dir << cloud_name << "_method=" << method;
+    out3d << output_dir << cloud_name;
     if(apply_init_transformation) // NOLINT
     {
         out3d << "_noise=" << lvl_noise << "_rotation=" << lvl_rotation << "_translation=" << lvl_translation;
     }
-    out3d << ".ply";
+    out3d  << "_method=" << method << ".ply";
     ofstream out_file(out3d.str());
     cout << "Printing: " << out3d.str() << "... ";
 

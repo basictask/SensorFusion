@@ -41,7 +41,7 @@ int main(int argc, char** argv)
     else
     {
         // In case 1 arg is given transform the original cloud to become the model cloud
-        vector_2 = read_pointcloud(argv[2]);
+        vector_2 = read_pointcloud(argv[1]);
         n_rows = (long)vector_2.size();
         cloud_2 = vector2mat(vector_2, n_rows); // Target cloud
         cloud_1 = apply_init_transform(cloud_2); // Create source with applied transformation

@@ -21,10 +21,10 @@ using namespace cv;
 //============[ Parameters set by user ]=============
 
 //-----[ Initial transformation for the clouds ]-----
-const bool apply_init_transformation = false;
-const double lvl_noise = 0; // Level of noise to add to the original point cloud (Gaussian)
-const double lvl_rotation = 5; // Rotation to add to the original point cloud (in degrees)
-const double lvl_translation = 2; // Translation to add to the original point cloud (y axis)
+const bool apply_init_transformation = true;
+const double lvl_noise = 0.5; // Level of noise to add to the original point cloud (Gaussian) [0.1, 0.5, 1.0] ??
+const double lvl_rotation = 20; // Rotation to add to the original point cloud (in degrees) [5, 15, 20]
+const double lvl_translation = 5; // Translation to add to the original point cloud (y axis) [0.5, 1, 5]
 
 //--------[ Thresholds and other parameters ]--------
 const int max_leaf = 10; // Maximum leaf size for KD-tree search
