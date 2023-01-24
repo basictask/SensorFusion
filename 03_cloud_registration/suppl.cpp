@@ -248,41 +248,88 @@ Matrix4d estimate_T_true(const MatrixXd& cloud_1, const MatrixXd& cloud_2)
     return T.cast<double>();
 }
 
+double rotation_error(MatrixXd cloud_1, MatrixXd cloud_2)
+{
+    // Calculates the rotation error (angular difference) between the point clouds
+    // Calculate the centroid for the two point clouds
+    Vector3d centroid_1 = cloud_1.colwise().mean();
+    Vector3d centroid_2 = cloud_2.colwise().mean();
+
+    // Compute centered points and update both clouds
+    cloud_1 = cloud_1.rowwise() - centroid_1.transpose();
+    cloud_2 = cloud_2.rowwise() - centroid_2.transpose();
+
+    MatrixXd covariance = cloud_1.transpose() * cloud_2; // Create 3x3 covariance matrix
+    JacobiSVD<Matrix3d> svd(covariance, ComputeFullU | ComputeFullV); // Compute SVD
+    Matrix3d R = svd.matrixU() * svd.matrixV().transpose(); // Get the rotation matrix
+
+    double det_R = R.determinant(); // Save the determinant
+
+    // Correction for the special case of reflection --> negative determinant
+    if(det_R < 0)
+    {
+        Matrix3d B = Matrix3d::Identity();
+        B(2, 2) = det_R;
+        R = svd.matrixU() * B * svd.matrixV().transpose();
+    }
+    return acos((R.trace() - 1) / 2);
+}
+
+double translation_error(MatrixXd cloud_1, MatrixXd cloud_2)
+{
+    // Calculate the centroid for the two point clouds
+    Vector3d centroid_1 = cloud_1.colwise().mean();
+    Vector3d centroid_2 = cloud_2.colwise().mean();
+
+    // Translation vector
+    Vector3d t = centroid_1 - centroid_2;
+
+    // Translate the first cloud
+    MatrixXd cloud_1_tr = cloud_1.rowwise() + t.transpose();
+
+    // Return the MSE
+    return (cloud_1_tr - cloud_2).norm() / (double)cloud_1.rows();
+}
+
 void log_execution(const MatrixXd& cloud_1, const MatrixXd& cloud_2, const string& method, const double& error,
-                   const int& n_iter, const bool& converged, const Matrix4d& T_true, const Matrix4d& T_pred)
+                   const double& rotation_error, const double& translation_error, const int& n_iter,
+                   const bool& converged, const Matrix4d& T_true, const Matrix4d& T_pred)
 {
     // Logs the execution for a given method. The file it gets written to is defined in main.h [log_file].
     // Order of columns: cloud_name;method;error;n_iter;converged;time;noise;rotation;translation;T_true;T_pred
     // Rotation, translation and noise only get a non-0 value if apply_init_transformation is true
-    fstream fout;
-    fout.open(log_file, ios::out | ios::app);
-
-    // Output running params
-    fout << cloud_name <<
-     ";" << method <<
-     ";" << error <<
-     ";" << n_iter <<
-     ";" << converged <<
-     ";" << timenow << ";";
-
-    // Output initial transformation parameters
-    if(apply_init_transformation) // NOLINT
+    if(write_log) // NOLINT
     {
-        fout << lvl_noise <<
-         ";" << lvl_rotation <<
-         ";" << lvl_translation;
-    }
-    else
-    {
-        fout << 0 << ";" << 0 << ";" << 0;
-    }
+        fstream fout;
+        fout.open(log_file, ios::out | ios::app);
 
-    // Output true and predicted transformation matrices
-    fout << ";" << print_mat(T_true, ",") <<
-            ";" << print_mat(T_pred, ",") << endl;
+        // Output running params
+        fout << cloud_name <<
+             ";" << method <<
+             ";" << error <<
+             ";" << rotation_error <<
+             ";" << translation_error <<
+             ";" << n_iter <<
+             ";" << converged <<
+             ";" << timenow << ";";
 
-    fout.close();
-    cout << "Done logging results for " << method << "." << endl;
+        // Output initial transformation parameters
+        if (apply_init_transformation) // NOLINT
+        {
+            fout << lvl_noise <<
+                 ";" << lvl_rotation <<
+                 ";" << lvl_translation;
+        } else {
+            fout << 0 << ";" << 0 << ";" << 0;
+        }
+
+        // Output true and predicted transformation matrices
+        fout << ";" << print_mat(T_true, ",") <<
+             ";" << print_mat(T_pred, ",") << endl;
+
+        fout.close();
+        cout << "Done logging results for " << method << "." << endl;
+    }
 }
 
 string print_mat(const MatrixXd& mat, const string& sep)

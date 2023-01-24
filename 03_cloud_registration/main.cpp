@@ -133,18 +133,18 @@ MatrixXd apply_init_transform(MatrixXd cloud)
     return cloud;
 }
 
-MatrixXd nn_search(const MatrixXd& cloud_1, MatrixXd cloud_2)
+MatrixXd nn_search(const MatrixXd& cloud_1, const MatrixXd& cloud_2)
 {
     // Nearest-neighbor search -> params can be set at the top of the script
     // The number of leaves: num_leaves
     // Number of neighbors: num_result
-    MatrixXd nn_result(cloud_1.rows(), 3);
-    kd_tree tree_1(3, cref(cloud_1), max_leaf);
+    MatrixXd nn_result(cloud_2.rows(), 3);
+    kd_tree tree_1(3, cref(cloud_2), max_leaf);
     tree_1.index -> buildIndex();
 
-    for (int i = 0; i < cloud_1.rows(); i++)
+    for (int i = 0; i < cloud_2.rows(); i++)
     {
-        vector<double> point{cloud_2(i, 0), cloud_2(i, 1), cloud_2(i, 2)};
+        vector<double> point{cloud_1(i, 0), cloud_1(i, 1), cloud_1(i, 2)};
         unsigned long nn_index = 0; // Index of the closes neighbor will be stored here
         double error = 0; // Error term between the two points
         KNNResultSet<double> result(num_result); // Result of NN search for a single point
@@ -181,6 +181,14 @@ pair<Matrix3d, Vector3d> estimate_transformation(MatrixXd cloud_1, MatrixXd clou
     // Compute the rotation matrix using the U and V matrices from the SVD
     Matrix3d R = svd.matrixU() * svd.matrixV().transpose();
 
+//    double det_R = R.determinant();
+//    if(det_R < 0)
+//    {
+//        Matrix3d B = Matrix3d::Identity();
+//        B(2, 2) = det_R;
+//        R = svd.matrixU() * B * svd.matrixV().transpose();
+//    }
+
     // Compute the translation vector as the difference between the centroids
     Vector3d t = centroid_2 - R * centroid_1;
 
@@ -197,7 +205,7 @@ MatrixXd reorder(const MatrixXd& cloud, const MatrixXd& indices)
     {
         int p_0 = (int)indices(i, 0); // Get index for point in cloud 1
         int p_1 = (int)indices(i, 1); // Get index for point in cloud 2
-        result.row(p_1) = cloud.row(p_0); // Swap the 2 points
+        result.row(p_0) = cloud.row(p_1); // Swap the 2 points
     }
     return result;
 }
@@ -239,10 +247,10 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
     {
         MatrixXd nn = nn_search(cloud_1, cloud_2); // Compute nearest neighbors
         
-        cloud_1 = reorder(cloud_1, nn); // Reorder points
+        MatrixXd cloud_2_tr = reorder(cloud_2, nn); // Reorder points
 
         // Estimate the transformation between the point clouds
-        pair<Matrix3d, Vector3d> transform = estimate_transformation(cloud_1, cloud_2);
+        pair<Matrix3d, Vector3d> transform = estimate_transformation(cloud_1, cloud_2_tr);
         Matrix3d R = transform.first; // Rotation matrix
         Vector3d t = transform.second; // Translation vector
 
@@ -269,11 +277,14 @@ Matrix4d icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
 
     time(&end); // End timer
     timenow = float(end - start); // Calculate duration of the algorithm
-    cout << "Mean Squared Error = " << error << endl;
+    double error_rot = rotation_error(cloud_1, cloud_2);
+    double error_tr = translation_error(cloud_1, cloud_2);
+    cout << "Rotation Error = " << error_rot << endl;
+    cout << "Translation Error = " << error_tr << endl;
     cout << "Change of Error = " << abs(error - error_prev) << endl;
-    cout << "Steps taken = " << iter << endl;
+    cout << "Steps Taken = " << iter << endl;
     output_clouds(cloud_1, cloud_2, "ICP"); // Write the clouds into a file
-    log_execution(cloud_1, cloud_2, "ICP", error, iter, (iter < icp_iter - 1), T_true, T); // Write into log file
+    log_execution(cloud_1, cloud_2, "ICP", error, error_rot, error_tr, iter, (iter < tricp_iter - 1), T_true, T);
     return T;
 }
 
@@ -339,14 +350,14 @@ Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
     {
         MatrixXd nn = nn_search(cloud_1, cloud_2); // Compute nearest neighbors
 
-        cloud_1 = reorder(cloud_1, nn);
+        MatrixXd cloud_2_tr = reorder(cloud_2, nn);
 
         xi = golden_section_search(0.1, 0.9, 0.001, nn); // G-search [min, max, tolerance, nn]
 
         long trimmed_len = (long)(xi * (double)nn.rows()); // Get new length for matrix
         MatrixXd cloud_1_new(trimmed_len, cloud_1.cols());
         MatrixXd cloud_2_new(trimmed_len, cloud_2.cols());
-        reorder_trim(cloud_1, cloud_2, cloud_1_new, cloud_2_new, nn, trimmed_len); // Restructure into new containers
+        reorder_trim(cloud_1, cloud_2_tr, cloud_1_new, cloud_2_new, nn, trimmed_len); // Restructure into new containers
 
         error = calc_error(cloud_1_new, cloud_2_new, false); // Compute the mean squared error
 
@@ -376,11 +387,14 @@ Matrix4d tr_icp(MatrixXd cloud_1, const MatrixXd& cloud_2)
 
     time(&end); // End timer
     timenow = float(end - start); // Calculate duration of the algorithm
-    cout << "Mean Squared Error = " << error << endl;
+    double error_rot = rotation_error(cloud_1, cloud_2);
+    double error_tr = translation_error(cloud_1, cloud_2);
+    cout << "Rotation Error = " << error_rot << endl;
+    cout << "Translation Error = " << error_tr << endl;
     cout << "Change of Error = " << abs(error - error_prev) << endl;
-    cout << "Steps taken = " << iter << endl;
+    cout << "Steps Taken = " << iter << endl;
     output_clouds(cloud_1, cloud_2, "TR-ICP"); // Write the clouds into a file
-    log_execution(cloud_1, cloud_2, "TR-ICP", error, iter, (iter < tricp_iter - 1), T_true, T); // Write into log file
+    log_execution(cloud_1, cloud_2, "TR-ICP", error, error_rot, error_tr, iter, (iter < tricp_iter - 1), T_true, T);
     return T;
 }
 
