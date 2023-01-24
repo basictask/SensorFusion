@@ -97,9 +97,8 @@ MatrixXd apply_init_transform(MatrixXd cloud)
     Matrix3d R;
     if(lvl_rotation > 0.)
     {
-        R << cos(lvl_rotation), 0, sin(lvl_rotation),
-                             0, 1, 0,
-            -sin(lvl_rotation), 0, cos(lvl_rotation);
+        double rot_rad = (lvl_rotation * 3.141592653589793) / 180; // Convert rotation degree to radian
+        R = AngleAxisd(rot_rad, Vector3d::UnitY());
     }
     else
     {
@@ -180,14 +179,6 @@ pair<Matrix3d, Vector3d> estimate_transformation(MatrixXd cloud_1, MatrixXd clou
 
     // Compute the rotation matrix using the U and V matrices from the SVD
     Matrix3d R = svd.matrixU() * svd.matrixV().transpose();
-
-//    double det_R = R.determinant();
-//    if(det_R < 0)
-//    {
-//        Matrix3d B = Matrix3d::Identity();
-//        B(2, 2) = det_R;
-//        R = svd.matrixU() * B * svd.matrixV().transpose();
-//    }
 
     // Compute the translation vector as the difference between the centroids
     Vector3d t = centroid_2 - R * centroid_1;

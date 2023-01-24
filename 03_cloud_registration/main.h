@@ -27,15 +27,15 @@ const double lvl_rotation = 0; // Rotation to add to the original point cloud (i
 const double lvl_translation = 0; // Translation to add to the original point cloud (y axis) [0.5, 1, 5]
 
 //--------[ Thresholds and other parameters ]--------
-const bool write_log = false; // Set to true to write log into log file
+const bool write_log = true; // Set to true to write log into log file
 const int max_leaf = 10; // Maximum leaf size for KD-tree search
 const int num_result = 1; // Number of results for KNN search
 const int icp_iter = 100; // Number of iteration for the ICP algorithm
 const int tricp_iter = 100; // Number of iterations for the TR-ICP algorithm
-const double icp_error_t = 50; // ICP error threshold
-const double tricp_error_t = 0.02; // TR-ICP error threshold
-const double icp_error_change_t = 0.0005; // ICP error change threshold
-const double tricp_error_change_t = 0.0005; // TR-ICP error change threshold
+const double icp_error_t = 5; // ICP error threshold
+const double tricp_error_t = 0.01; // TR-ICP error threshold
+const double icp_error_change_t = 0.05; // ICP error change threshold
+const double tricp_error_change_t = 0.005; // TR-ICP error change threshold
 const double phi = (1 + sqrt(5)) / 2; // Golden ratio by definition
 const int lambda = 2; // Tolerance parameter for golden section objective function
 
