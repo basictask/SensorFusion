@@ -21,10 +21,10 @@ using namespace cv;
 //============[ Parameters set by user ]=============
 
 //-----[ Initial transformation for the clouds ]-----
-const bool apply_init_transformation = false; // Set to true to apply transformation defined below
+const bool apply_init_transformation = true; // Set to true to apply transformation defined below
 const double lvl_noise = 0; // Level of noise to add to the original point cloud (Gaussian) [0.1, 0.5, 1.0]
-const double lvl_rotation = 0; // Rotation to add to the original point cloud (in degrees) [5, 15, 20]
-const double lvl_translation = 0; // Translation to add to the original point cloud (y axis) [0.5, 1, 5]
+const double lvl_rotation = 15; // Rotation to add to the original point cloud (in degrees) [5, 10, 15, 20]
+const double lvl_translation = 5; // Translation to add to the original point cloud (y axis) [0.5, 1, 5]
 
 //--------[ Thresholds and other parameters ]--------
 const bool write_log = true; // Set to true to write log into log file
