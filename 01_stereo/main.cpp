@@ -15,15 +15,19 @@ using namespace cv;
 // clear && cmake . && make && ./main "data/cones1.png" "data/cones2.png" "output" "data/cones_disp1.png"
 // Note: the 4th parameter is optional and refers to the ground truth disparities for the left image
 
+// Starting config for cones
+// Naive: window_size=7, dmin=230
+// Dynamic: window_size=1. dmin=230, lambda=100
+
 const bool disp_dynamic = true; 				// true --> DP disparities, false --> naive disparities
 const bool log_execution = true;				// disable to not log an execution (testing only)
 const float imscale = 1.0; 						// resizing factor (for speeding up computation)
 const double focal_length = 3740 * imscale; 	// focal length
 const double baseline = 160; 					// baseline
-const int window_size = 7; 						// size of convolutional mask 
-const int dmin = 200 * imscale; 				// disparity added due to cropping
-const float lambda = 200; 						// weighting parameter (dynamic only)
-const float max_disparity = 230; 				// maximal disoarity (naive only)
+const int window_size = 1; 						// size of convolutional mask
+const int dmin = 230 * imscale; 				// disparity added due to cropping
+const float lambda = 100; 						// weighting parameter (dynamic only)
+const float max_disparity = 260; 				// maximal disparity (naive only)
 const int d_scale = 1;							// scaling factor for disparities (naive only)
 
 string image_name = "";
@@ -115,7 +119,13 @@ int main(int argc, char** argv)
 
 	// Write to point cloud and display
 	std::stringstream out1;
-	out1 << output_file << "_" << name << "_" << image_name << "_lambda=" << lambda << "_kernel=" << window_size << "_dmin=" << dmin << "_scale=" << imscale << ".png";
+	out1 << output_file <<
+    "_" << name <<
+    "_" << image_name <<
+    "_lambda=" << lambda <<
+    "_kernel=" << window_size <<
+    "_dmin=" << dmin <<
+    "_scale=" << imscale << ".png";
 	cv::imwrite(out1.str(), disparities);
 	cv::namedWindow(name, cv::WINDOW_AUTOSIZE);
 	cv::imshow(name, disparities);
@@ -160,7 +170,6 @@ cv::Mat read_image(char* imname, float scale)
 void StereoEstimation_Naive(int height, int width, cv::Mat& image1, cv::Mat& image2, cv::Mat& naive_disparities)
 {
 	int half_window_size = window_size / 2;
-
 #pragma omp parallel for
 	for (int i = half_window_size; i < height - half_window_size; ++i) 
 	{
@@ -168,36 +177,30 @@ void StereoEstimation_Naive(int height, int width, cv::Mat& image1, cv::Mat& ima
 		{
 			int min_ssd = INT_MAX;
 			int disparity = 0;
-
 			for (int d = -j + half_window_size; d < width - j - half_window_size; ++d) 
 			{
 				int ssd = 0;
-
 				for (int k = -half_window_size; k < half_window_size + 1; k++)
 				{
 					for (int l = -half_window_size; l < half_window_size + 1; l++)
 					{
 						int image1_coord = image1.at<uchar>(i + k, j + l);
 						int image2_coord = image2.at<uchar>(i + k, j + l + d);
-
 						ssd += (image1_coord - image2_coord) * (image1_coord - image2_coord);
 					}
 				}
-
 				if (ssd < min_ssd) 
 				{
 					min_ssd = ssd;
 					disparity = abs(d) * d_scale;
 				}
 			}
-
 			if (abs(disparity) < max_disparity) 
 			{
 				naive_disparities.at<uchar>(i - half_window_size, j - half_window_size) = disparity;
 			}
-
 #pragma omp critical
-			cout << i - half_window_size + 1 << "/" << height - window_size + 1 << "\r" << flush; // Progress indicator
+			cout << i - half_window_size + 1 << "/" << height - window_size + 1 << "\r" << flush; // Progress
 		}
 	}
 }
@@ -212,60 +215,54 @@ void StereoEstimation_DP(int height, int width, cv::Mat& image1, cv::Mat& image2
 	{
 		Mat C = Mat::zeros(Size(imageSize.width - 2 * window_size, imageSize.width - 2 * window_size), CV_16UC1);
 		Mat M = Mat::zeros(Size(imageSize.width - 2 * window_size, imageSize.width - 2 * window_size), CV_8UC1);
-
 		C.at<unsigned short>(0, 0) = 0;
 		M.at<unsigned char>(0, 0) = 0;
-		for (int i = 1; i < C.size().height; ++i) 
+		for (int i = 1; i < C.size().height; i++)
 		{
 			C.at<unsigned short>(i, 0) = i * lambda;
 			M.at<unsigned char>(i, 0) = 1;
 		}
-		for (int j = 1; j < C.size().width; ++j) 
+		for (int j = 1; j < C.size().width; j++) 
 		{
 			C.at<unsigned short>(0, j) = j * lambda;
 			M.at<unsigned char>(0, j) = 2;
 		}
-
-		for (int r = 1; r < C.size().height; ++r) 
+		for (int r = 1; r < C.size().height; r++)
 		{
-			for (int l = 1; l < C.size().width; ++l) 
+			for (int l = 1; l < C.size().width; l++)
 			{
-				Rect leftROI = Rect(l, y_0 - window_size, 2 * window_size + 1, 2 * window_size + 1);
-				Rect rightROI = Rect(r, y_0 - window_size, 2 * window_size + 1, 2 * window_size + 1);
-				Mat leftWindow = image1(leftROI);
-				Mat rightWindow = image2(rightROI);
-
+				Mat window_left = image1(Rect(l, y_0 - window_size, 2 * window_size + 1, 2 * window_size + 1));
+				Mat window_right = image2(Rect(r, y_0 - window_size, 2 * window_size + 1, 2 * window_size + 1));
 				Mat diff;
-				absdiff(leftWindow, rightWindow, diff);
-				int SAD = sum(diff)[0];
-				
-				int cMatch = C.at<unsigned short>(r - 1, l - 1) + SAD;
-				int cLeftOccl = C.at<unsigned short>(r - 1, l) + lambda;
-				int cRightOccl = C.at<unsigned short>(r, l - 1) + lambda;
+				absdiff(window_left, window_right, diff);
+
+                int SAD = sum(diff)[0];
+				int c_m = C.at<unsigned short>(r - 1, l - 1) + SAD;
+				int c_l = C.at<unsigned short>(r - 1, l) + lambda;
+				int c_r = C.at<unsigned short>(r, l - 1) + lambda;
 
 				// Minimizing cost
-				int c = cMatch;
+				int c = c_m;
 				int m = 0;
-				if (cLeftOccl < c) 
+				if (c_l < c) // Occluded from left
 				{
-					c = cLeftOccl;
+					c = c_l;
 					m = 1;
-					if (cRightOccl < c) 
+					if (c_r < c) // Occluded from right
 					{
-						c = cRightOccl;
+						c = c_r;
 						m = 2;
 					}
 				}
-
 				C.at<unsigned short>(r, l) = c;
 				M.at<unsigned char>(r, l) = m;
 			}
 		}
-
 		// Create disparity map
 		int i = M.size().height - 1;
 		int j = M.size().width - 1;
-		while (j > 0) {
+		while (j > 0)
+        {
 			if (M.at<unsigned char>(i, j) == 0)
 			{
 				disparityMap.at<unsigned short>(y_0, j) = abs(i - j);
@@ -282,21 +279,23 @@ void StereoEstimation_DP(int height, int width, cv::Mat& image1, cv::Mat& image2
 				j--;
 			}
 		}
-
 #pragma omp critical
-		cout << y_0 - window_size + 1 << "/" << imageSize.height - 2 * window_size << "\r" << flush; // Progress indicator
+		cout << y_0 - window_size + 1 << "/" << imageSize.height - 2 * window_size << "\r" << flush; // Progress
 	}
-
 	Mat disparityMap_CV_8UC1;
 	disparityMap.convertTo(disparityMap_CV_8UC1, CV_8UC1);
-
 	dp_disparities = disparityMap_CV_8UC1;
 }
 
 void Disparity2PointCloud(const std::string& file, int height, int width, cv::Mat& disp)
 {
 	std::stringstream out3d;
-	out3d << file << "_" << name << "_" << image_name << "_lambda=" << lambda << "_kernel=" << window_size << "_dmin=" << dmin << "_scale=" << imscale << ".xyz";
+	out3d << file << "_" << name <<
+    "_" << image_name <<
+    "_lambda=" << lambda <<
+    "_kernel=" << window_size <<
+    "_dmin=" << dmin <<
+    "_scale=" << imscale << ".xyz";
 	std::ofstream outfile(out3d.str());
 
 	float x, y, z;
